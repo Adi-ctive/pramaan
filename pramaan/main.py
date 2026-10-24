@@ -77,6 +77,19 @@ def login(response: Response, request: Request, body: dict = Body(...)):
     return {"username": u["username"], "role": u["role"], "name": u["name"], "region": u["region"]}
 
 
+@app.post("/api/auth/demo-login")
+def demo_login(response: Response, body: dict = Body(...)):
+    """One-click sign-in for the seeded demo accounts (synthetic data only). Off when DEMO is not 'true'."""
+    if not DEMO:
+        raise HTTPException(404)
+    u = get_db().users.find_one({"username": body.get("username", "")})
+    if not u:
+        raise HTTPException(404, "Unknown demo user")
+    response.set_cookie("pramaan_session", make_token(u), httponly=True, samesite="lax", secure=os.environ.get("VERCEL") == "1", max_age=8 * 3600)
+    audit.record(u["username"], "auth.demo_login", "user")
+    return {"username": u["username"], "role": u["role"]}
+
+
 @app.post("/api/auth/logout")
 def logout(response: Response):
     response.delete_cookie("pramaan_session")

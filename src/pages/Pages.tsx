@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { api, Chip, SEV } from "../api";
-import { useUser } from "../main";
+import { useUser } from "../ctx";
+import { CATEGORY } from "../labels";
 
 function useData<T = any>(path: string, deps: any[] = []): [T | null, () => void, string] {
   const [d, setD] = useState<T | null>(null);
@@ -31,35 +32,53 @@ export function Queue() {
   const [q, setQ] = useState("");
   const [host, setHost] = useState("");
   const nav = useNavigate();
-  if (!rows) return null;
+  if (!rows) return <div className="text-sm text-slate-500">Loading applications…</div>;
   const hosts = [...new Set(rows.map((r) => r.host))];
   const shown = rows.filter((r) => (!host || r.host === host) && (!q || JSON.stringify(r).toLowerCase().includes(q.toLowerCase())));
+  const serious = rows.filter((r) => r.counts.HIGH > 0).length;
+  const clean = rows.filter((r) => !r.counts.HIGH && !r.counts.MEDIUM).length;
   return (
-    <div className="space-y-3">
-      <div className="flex flex-wrap gap-2 items-center">
-        <h1 className="text-lg font-bold mr-auto">Queue</h1>
-        <input className="inp" placeholder="Search institution / ID / ref" value={q} onChange={(e) => setQ(e.target.value)} />
-        <select className="inp" value={host} onChange={(e) => setHost(e.target.value)}><option value="">All hosts</option>{hosts.map((h) => <option key={h}>{h}</option>)}</select>
+    <div className="space-y-4">
+      <div>
+        <h1 className="text-2xl font-bold tracking-tight">Applications to review</h1>
+        <p className="text-sm text-slate-500">Already checked by PRAMAAN. The ones needing most attention are on top. Click one to see what was found.</p>
       </div>
-      <div className="text-xs bg-blue-50 dark:bg-slate-900 border border-blue-200 dark:border-slate-700 rounded px-3 py-1.5">Review priority is a sorting aid, not a decision.</div>
-      <div className="card overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead><tr><th>Priority</th><th>Institution</th><th>Category</th><th>Host</th><th>Submitted</th><th>Age</th><th>Open H/M/L</th><th>Verified</th><th>Status</th></tr></thead>
-          <tbody>
-            {shown.map((r) => (
-              <tr key={r.id} onClick={() => nav(`/app/${r.id}`)} className="border-t dark:border-slate-800 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800">
-                <td><div className="w-20 h-2 bg-slate-200 rounded"><div className="h-2 rounded bg-red-500" style={{ width: `${r.risk}%` }} /></div><span className="text-xs">{r.risk}</span></td>
-                <td><div className="font-medium">{r.institution}</div><div className="text-xs text-slate-500">{r.institution_id} · {r.region} · {r.external_ref}</div></td>
-                <td>{r.category}</td><td className="text-xs">{r.host}</td><td className="text-xs">{r.submitted}</td>
-                <td>{r.sla && <Chip text={`${r.sla.age_days}d`} cls={r.sla.breached ? "bg-red-600 text-white" : ""} />}</td>
-                <td className="whitespace-nowrap"><Chip text={String(r.counts.HIGH || 0)} cls={SEV.HIGH} /> <Chip text={String(r.counts.MEDIUM || 0)} cls={SEV.MEDIUM} /> <Chip text={String(r.counts.LOW || 0)} cls={SEV.LOW} /></td>
-                <td className="text-xs">{r.verification?.verified}/{r.verification?.total}</td>
-                <td><Chip text={r.decided ? "DECIDED" : r.status} /></td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+      <div className="grid grid-cols-3 gap-3">
+        <div className="card p-4"><div className="text-3xl font-extrabold">{rows.length}</div><div className="text-sm text-slate-500">applications</div></div>
+        <div className="card p-4 border-l-4 border-l-red-500"><div className="text-3xl font-extrabold text-red-600">{serious}</div><div className="text-sm text-slate-500">have serious problems</div></div>
+        <div className="card p-4 border-l-4 border-l-emerald-500"><div className="text-3xl font-extrabold text-emerald-600">{clean}</div><div className="text-sm text-slate-500">passed every check</div></div>
       </div>
+      <div className="flex flex-wrap gap-2">
+        <input className="inp flex-1 min-w-[200px]" placeholder="Search by college, ID or reference" value={q} onChange={(e) => setQ(e.target.value)} />
+        <select className="inp" value={host} onChange={(e) => setHost(e.target.value)}><option value="">From any portal</option>{hosts.map((h) => <option key={h}>{h}</option>)}</select>
+      </div>
+      <div className="space-y-2">
+        {shown.map((r) => {
+          const bad = r.counts.HIGH > 0, warn = !bad && r.counts.MEDIUM > 0;
+          return (
+            <button key={r.id} onClick={() => nav(`/app/${r.id}`)} className={`card w-full text-left p-4 hover:shadow-md transition border-l-4 ${bad ? "border-l-red-500" : warn ? "border-l-amber-400" : "border-l-emerald-500"}`}>
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+                <div className="flex-1 min-w-[220px]">
+                  <div className="font-semibold text-base">{r.institution}</div>
+                  <div className="text-xs text-slate-500">{CATEGORY[r.category] || r.category} · via {r.host} · {r.region} region · submitted {r.submitted}</div>
+                </div>
+                <div className="text-sm">
+                  {bad ? <span className="font-semibold text-red-600">{r.counts.HIGH} serious problem{r.counts.HIGH > 1 ? "s" : ""}</span>
+                    : warn ? <span className="font-semibold text-amber-600">Needs a look</span> : <span className="font-semibold text-emerald-600">All checks passed</span>}
+                  {(r.counts.MEDIUM > 0 && bad) && <span className="text-slate-500"> · {r.counts.MEDIUM} to check</span>}
+                </div>
+                <div className="text-xs text-slate-500 w-36">{r.verification?.verified} of {r.verification?.total} documents confirmed with issuer</div>
+                <div className="w-28">
+                  <div className="h-1.5 bg-slate-200 dark:bg-slate-700 rounded"><div className={`h-1.5 rounded ${bad ? "bg-red-500" : warn ? "bg-amber-400" : "bg-emerald-500"}`} style={{ width: `${Math.max(r.risk, 4)}%` }} /></div>
+                  <div className="text-[10px] text-slate-400 mt-0.5">attention score {r.risk}/100</div>
+                </div>
+                {r.decided && <Chip text="Decision recorded" cls="bg-emerald-100 text-emerald-800" />}
+              </div>
+            </button>
+          );
+        })}
+      </div>
+      <p className="text-xs text-slate-400">The attention score only sorts the list. It is not a decision.</p>
     </div>
   );
 }
@@ -70,7 +89,7 @@ export function Dashboard() {
   const k = d.kpi;
   return (
     <div className="space-y-3">
-      <h1 className="text-lg font-bold">Dashboard</h1>
+      <h1 className="text-2xl font-bold tracking-tight">Overview</h1><p className="text-sm text-slate-500 -mt-2">How the whole queue looks right now.</p>
       <div className="grid grid-cols-2 md:grid-cols-6 gap-2">
         {[["In queue", k.in_queue], ["Ready for review", k.ready], ["SLA breaches", k.sla_breaches], ["Pending verifications", k.pending_verifications], ["Avg processing", `${k.avg_processing_ms} ms`], ["Flags / application", k.flags_per_app]].map(([l, v]) => (
           <div key={l} className="card p-3"><div className="text-xs text-slate-500">{l}</div><div className="text-xl font-bold">{v}</div></div>
@@ -93,7 +112,7 @@ export function Alerts() {
   if (!rows) return null;
   return (
     <div className="space-y-3">
-      <h1 className="text-lg font-bold">Alerts</h1>
+      <h1 className="text-2xl font-bold tracking-tight">Alerts</h1><p className="text-sm text-slate-500 -mt-2">Raised automatically when a check finds something an officer must act on.</p>
       <div className="card overflow-x-auto"><table className="w-full text-sm"><thead><tr><th>Type</th><th>Severity</th><th>Institution</th><th>Notify</th><th>Channel</th><th>Due</th><th>Status</th><th></th></tr></thead><tbody>
         {rows.map((a) => (
           <tr key={a.id} className="border-t dark:border-slate-800"><td>{a.type}</td><td><Chip text={a.severity} cls={SEV[a.severity]} /></td>
@@ -126,7 +145,7 @@ export function RulePacks() {
   const run = async (path: string, body: any) => { try { setOut(await api(path, { json: body })); } catch (e: any) { setOut({ errors: [e.message] }); } };
   return (
     <div className="space-y-3">
-      <h1 className="text-lg font-bold">Rule packs</h1>
+      <h1 className="text-2xl font-bold tracking-tight">Checklist rules</h1><p className="text-sm text-slate-500 -mt-2">Each portal has a rule pack: which documents are required, which fields to read and what counts as a problem. Edit, test on a real application, then activate. No code changes.</p>
       <div className="card overflow-x-auto"><table className="w-full text-sm"><thead><tr><th>Key</th><th>Version</th><th>Status</th><th>Created</th><th></th></tr></thead><tbody>
         {packs.map((p) => <tr key={p.key + p.version} className="border-t dark:border-slate-800"><td className="font-mono">{p.key}</td><td>{p.version}</td><td><Chip text={p.status} cls={p.status === "ACTIVE" ? "bg-emerald-100 text-emerald-800" : ""} /></td><td className="text-xs">{p.created?.slice(0, 16)}</td>
           <td><button className="btn2" onClick={() => { setSel(p); setText(p.yaml); setOut(null); }}>{edit ? "Edit" : "View"}</button></td></tr>)}
@@ -160,7 +179,7 @@ export function Hosts() {
   if (!hosts) return null;
   return (
     <div className="space-y-3">
-      <h1 className="text-lg font-bold">Hosts & keys</h1>
+      <h1 className="text-2xl font-bold tracking-tight">Connected portals</h1><p className="text-sm text-slate-500 -mt-2">Portals that send applications to PRAMAAN. Each maps its own upload slots to PRAMAAN document types and receives signed status updates.</p>
       {key && <div className="card p-3 text-sm bg-amber-50 dark:bg-amber-950">New API key (shown once): <code className="break-all">{key.api_key}</code><div className="text-xs">{key.note}</div></div>}
       {hosts.map((h) => (
         <div key={h.id} className="card p-3 space-y-2 text-sm">
@@ -188,9 +207,10 @@ export function Audit() {
   if (!rows) return null;
   return (
     <div className="space-y-3">
-      <div className="flex flex-wrap items-center gap-2"><h1 className="text-lg font-bold mr-auto">Audit</h1>
+      <div className="flex flex-wrap items-center gap-2"><h1 className="text-2xl font-bold tracking-tight mr-auto">Audit trail</h1>
         <button className="btn" onClick={async () => { setV(await api("/audit/verify")); load(); }}>Verify chain</button>
         <a className="btn2" href="/api/audit/export">Export CSV</a></div>
+      <p className="text-sm text-slate-500 -mt-2 w-full">Every action is chained to the previous one with a hash. If anyone edits a past row, verification fails at that row.</p>
       {v && <div className={`card p-3 text-sm ${v.ok ? "bg-emerald-50 dark:bg-emerald-950" : "bg-red-50 dark:bg-red-950"}`}>{v.ok ? `Chain intact. Last verified sequence #${v.last_verified}.` : `Chain BROKEN at sequence #${v.broken_at}. Last good #${v.last_verified}.`}</div>}
       <div className="card overflow-x-auto"><table className="w-full text-xs"><thead><tr><th>#</th><th>Time</th><th>Actor</th><th>Action</th><th>Object</th><th>Hash</th></tr></thead><tbody>
         {rows.map((e) => <tr key={e.seq} className="border-t dark:border-slate-800"><td>{e.seq}</td><td className="whitespace-nowrap">{e.ts.slice(0, 19).replace("T", " ")}</td><td>{e.actor}</td><td>{e.action}</td><td className="font-mono">{e.object}</td><td className="font-mono">{e.hash.slice(0, 12)}</td></tr>)}
@@ -209,8 +229,9 @@ export function Evaluation() {
   const pct = (x: any) => (x == null ? "n/a" : `${Math.round(x * 1000) / 10}%`);
   return (
     <div className="space-y-3">
-      <div className="flex items-center gap-2"><h1 className="text-lg font-bold mr-auto">Evaluation</h1>
+      <div className="flex items-center gap-2"><h1 className="text-2xl font-bold tracking-tight mr-auto">Accuracy on the test set</h1>
         {user.caps.includes("run_eval") && <button className="btn" disabled={busy} onClick={async () => { setBusy(true); setErr(""); try { await api("/eval/run", { method: "POST" }); load(); } catch (e: any) { setErr(e.message); } setBusy(false); }}>{busy ? "Running…" : "Run evaluation"}</button>}</div>
+      <p className="text-sm text-slate-500 -mt-2">Measured on freshly generated synthetic documents with known answers. Real numbers, including weak ones.</p>
       {err && <div className="text-sm text-red-600">{err}</div>}
       {!r ? <div className="card p-3 text-sm">No runs yet.</div> : (
         <>
