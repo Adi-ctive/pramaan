@@ -1,6 +1,6 @@
 # Evaluation report (LITE mode)
 
-Run `EVAL-EE27E5F7` at 2026-10-24T06:38 UTC, 6 samples per class, 266.8 s.
+Run `EVAL-EA896087` at 2026-10-24T07:46 UTC, 6 samples per class, 554.0 s.
 All material is freshly generated synthetic data with known answers. Numbers are as measured.
 
 | Metric | Value |
@@ -10,14 +10,14 @@ All material is freshly generated synthetic data with known answers. Numbers are
 | Field exact match, scanned printed (OCR Model) | n/a |
 | Printed CER, scanned (OCR Model) | n/a |
 | Handwriting CER | n/a |
-| Handwriting exact match | n/a |
-| Validation: single-defect apps flagged exactly right | 91.7% (24 apps) |
+| Handwriting exact match | n/a (0 fields) |
+| Validation: single-defect apps flagged exactly right | 100.0% (24 apps) |
 | Seeded discrepancy recall | 100.0% (14/14) |
 | HIGH/MEDIUM flags on golden apps | 0 |
 | Source-verification success (golden) | 100.0% of 14 verifiable |
-| Lab monitor count MAE | 0.0 over 12 photos (classical counter) |
+| Lab monitor count MAE | 0.0 over 12 photos (Object Detector (LITE, classical counter)) |
 | Room-type accuracy | n/a |
-| Avg processing time | 1646 ms/app, 242 ms/doc |
+| Avg processing time | 1741 ms/app, 256 ms/doc |
 | Alert delay | 0.0 ms (Alerts are raised in the same run that finds the condition; delay is measured in-process.) |
 | Estimated manual effort reduction | 86.3% (assumes 6.0 min/doc baseline, 2.0 min/flag) |
 
@@ -78,8 +78,8 @@ All material is freshly generated synthetic data with known answers. Numbers are
 | reused photo across institutions | INST-003 | DUPLICATE_ACROSS_INSTITUTIONS | DUPLICATE_ACROSS_INSTITUTIONS |
 | QR payload mismatch | INST-011 | QR_MISMATCH | QR_MISMATCH |
 | QR payload mismatch | INST-003 | QR_MISMATCH | QR_MISMATCH |
-| PDF edited after signing | INST-011 | PDF_MODIFIED_AFTER_SIGNING | PDF_EDIT_INDICATOR, PDF_MODIFIED_AFTER_SIGNING |
-| PDF edited after signing | INST-003 | PDF_MODIFIED_AFTER_SIGNING | PDF_EDIT_INDICATOR, PDF_MODIFIED_AFTER_SIGNING |
+| PDF edited after signing | INST-011 | PDF_MODIFIED_AFTER_SIGNING | PDF_MODIFIED_AFTER_SIGNING |
+| PDF edited after signing | INST-003 | PDF_MODIFIED_AFTER_SIGNING | PDF_MODIFIED_AFTER_SIGNING |
 
 ## Seeded demo applications
 

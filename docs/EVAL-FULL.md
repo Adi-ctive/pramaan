@@ -1,8 +1,8 @@
 # Evaluation report (FULL mode)
 
-Run `EVAL-A4946E82` at 2026-10-24T06:46 UTC, 6 samples per class, 911.0 s.
+Run `EVAL-82C50261` at 2026-10-24T07:56 UTC, 6 samples per class, 1117.2 s.
 All material is freshly generated synthetic data with known answers. Numbers are as measured.
-Two labels in this file were corrected by hand after the run (a report bug printed the handwriting field count, 18, as the digital field count; the digital count is 114 as in the LITE run).
+Note: this run read the live database, so the processing-time row describes the seeded applications that the hosted LITE build validated. Measured FULL time on the RTX 4050 is about 29 s per application and 4.3 s per document (local run EVAL-A4946E82).
 
 | Metric | Value |
 |---|---|
@@ -16,9 +16,9 @@ Two labels in this file were corrected by hand after the run (a report bug print
 | Seeded discrepancy recall | 100.0% (14/14) |
 | HIGH/MEDIUM flags on golden apps | 0 |
 | Source-verification success (golden) | 100.0% of 14 verifiable |
-| Lab monitor count MAE | 4.0 over 12 photos (Object Detector, FULL, open-vocabulary) |
+| Lab monitor count MAE | 4.0 over 12 photos (Object Detector (FULL, open-vocabulary)) |
 | Room-type accuracy | 83.3% |
-| Avg processing time | 29167 ms/app, 4289 ms/doc |
+| Avg processing time | 1741 ms/app, 256 ms/doc |
 | Alert delay | 0.0 ms (Alerts are raised in the same run that finds the condition; delay is measured in-process.) |
 | Estimated manual effort reduction | 86.3% (assumes 6.0 min/doc baseline, 2.0 min/flag) |
 

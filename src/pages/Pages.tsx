@@ -254,8 +254,9 @@ export function Evaluation() {
   const user = useUser()!;
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
+  const [pick, setPick] = useState(0);
   if (!runs) return null;
-  const r = runs[0];
+  const r = runs[pick] || runs[0];
   const pct = (x: any) => (x == null ? "n/a" : `${Math.round(x * 1000) / 10}%`);
   return (
     <div className="space-y-3">
@@ -265,6 +266,11 @@ export function Evaluation() {
       {err && <div className="text-sm text-red-600">{err}</div>}
       {!r ? <div className="card p-3 text-sm">No runs yet.</div> : (
         <>
+          {runs.length > 1 && (
+            <select className="inp" value={pick} onChange={(e) => setPick(+e.target.value)}>
+              {runs.map((x, i) => <option key={x.id} value={i}>{x.created.slice(0, 16).replace("T", " ")} · {x.mode} mode · {x.validation ? "full run" : "quick run"}</option>)}
+            </select>
+          )}
           <div className="text-xs text-slate-500">Run {r.id} · {r.created.slice(0, 16)} · {r.mode} mode · {r.samples_per_class} samples per class · {r.eval_seconds}s. Synthetic test set; real measured numbers.</div>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
             {[["Field exact match", pct(r.extraction.field_exact_match), `${r.extraction.fields} fields, printed digital`],
