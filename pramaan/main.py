@@ -593,9 +593,21 @@ def seed_ok(tok):
 def admin_seed(x_seed_token: str = Header(None)):
     seed_ok(x_seed_token)
     from .seed import reset
-    r = reset(password=os.environ.get("DEMO_PASSWORD"))
+    r = reset(password=os.environ.get("DEMO_PASSWORD"), run=False)
     r.pop("password", None)
     return r
+
+
+@app.post("/api/admin/seed-next")
+def admin_seed_next(x_seed_token: str = Header(None)):
+    """Validates the next seeded application that has no report yet (one per call, to fit the function time limit)."""
+    seed_ok(x_seed_token)
+    for kind in ("DONOR", "GOLDEN-A", "PROBLEM-A", "GOLDEN-B", "PROBLEM-B"):
+        a = get_db().applications.find_one({"external_ref": kind, "report_version": 0})
+        if a:
+            engine.run(a["id"], actor="seed")
+            return {"validated": kind, "done": False}
+    return {"done": True}
 
 
 @app.post("/api/admin/tamper-demo")

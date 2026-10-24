@@ -195,7 +195,7 @@ def build_docs(cx, inst, kind, n):
     return docs, sorted(set(expect)), renewed
 
 
-def reset(samples_dir=None, password=None):
+def reset(samples_dir=None, password=None, run=True):
     db = get_db()
     for c in db.list_collection_names():
         db[c].drop()
@@ -273,7 +273,8 @@ def reset(samples_dir=None, password=None):
                     "GOLDEN-A and PROBLEM-A are for Host A; GOLDEN-B and PROBLEM-B for Host B. PROBLEM-A: use institution INST-012, intake 180, "
                     "Lab 1 = 30 and Lab 2 = 15 claimed. FIRE_NOC__fire_noc_renewed.pdf is the rectification upload.</p>" + "".join(rows))
     for kind in ("DONOR", "GOLDEN-A", "PROBLEM-A", "GOLDEN-B", "PROBLEM-B"):
-        engine.run(out[kind], actor="seed")
+        if run:
+            engine.run(out[kind], actor="seed")
     return {"apps": out, "password": pw, "host_keys": {k: v[:8] + "..." for k, v in keys.items()}}
 
 
