@@ -7,7 +7,7 @@ FastAPI as one Vercel Python function (api/index.py → pramaan/main.py), MongoD
 React console (src/), framework-free widget (public/widget/v1/pramaan.js), two mock host portals (public/host-a, host-b).
 Runs in LITE mode only (no GPU, no OCR/handwriting model on serverless). Optional vision model via GROQ_KEY.
 
-Live: https://pramaan-sih26.vercel.app (alias; re-run `vercel alias set <new deployment> pramaan-sih26.vercel.app` after each prod deploy).
+Live: https://pramaan-sih26.vercel.app (project domain, follows each prod deploy).
 
 ## Working agreements
 - No regulatory numbers in code: rule packs in rulepacks/*.yaml, marked demo_value: true.
