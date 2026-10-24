@@ -63,16 +63,25 @@ def page_images(pdf, i):
     return out
 
 
-def find_bbox(pdf, page_i, text):
-    """Return [x, y, w, h] as fractions of the page, top-left origin."""
+def find_bbox(pdf, page_i, text, label=None):
+    """Return [x, y, w, h] as fractions of the page, top-left origin. With `label`, the value is found right after
+    'label: ' so a value that also appears elsewhere (an issuer name in the letterhead) is boxed in the right place."""
     page = pdf[page_i]
     w, h = page.get_size()
     tp = page.get_textpage()
-    s = tp.search(text, match_case=True)
-    occ = s.get_next()
+    occ, skip = None, 0
+    if label:
+        for sep in (": ", ":", " : "):
+            occ = tp.search(label + sep + text, match_case=True).get_next()
+            if occ:
+                skip = len(label + sep)
+                break
+    if not occ:
+        occ = tp.search(text, match_case=True).get_next()
+        skip = 0
     if not occ:
         return None
-    idx, n = occ
+    idx, n = occ[0] + skip, occ[1] - skip
     boxes = [tp.get_charbox(idx + k) for k in range(n)]
     l, b = min(x[0] for x in boxes), min(x[1] for x in boxes)
     r, t = max(x[2] for x in boxes), max(x[3] for x in boxes)
@@ -109,7 +118,7 @@ def extract_fields(pdf, pages, spec):
                 val = norm_number(raw)
             else:
                 val = raw
-            out[fname] = {"value": val, "raw": raw, "page": pi, "bbox": find_bbox(pdf, pi, raw),
+            out[fname] = {"value": val, "raw": raw, "page": pi, "bbox": find_bbox(pdf, pi, raw, anc),
                           "conf": 0.99 if val is not None else 0.4}
             break
     return out

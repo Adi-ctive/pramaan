@@ -46,10 +46,22 @@ def noise_map(img, block=16):
     g = _gray(img)
     res = g - _median3(g)
     h, w = (g.shape[0] // block) * block, (g.shape[1] // block) * block
+    # measure noise on paper only: ink edges would hide a pasted patch that contains writing
+    ink = g < 200
+    near = np.zeros_like(ink)
+    for dy in range(-2, 3):  # keep 2 px away from strokes: anti-aliased edges are not paper
+        for dx in range(-2, 3):
+            near |= np.roll(np.roll(ink, dy, 0), dx, 1)
+    paper = (~near[:h, :w]).reshape(h // block, block, w // block, block)
     r = res[:h, :w].reshape(h // block, block, w // block, block)
-    std = r.std(axis=(1, 3))
-    med = float(np.median(std)) or 1e-3
-    return std / med, block
+    cnt = paper.sum(axis=(1, 3))
+    mean = (r * paper).sum(axis=(1, 3)) / np.maximum(cnt, 1)
+    var = ((r ** 2) * paper).sum(axis=(1, 3)) / np.maximum(cnt, 1) - mean ** 2
+    std = np.sqrt(np.maximum(var, 0))
+    ok = cnt >= block * block // 4
+    med = float(np.median(std[ok])) if ok.any() else 1e-3
+    ratio = np.where(ok, std / (med or 1e-3), 1.0)  # mostly-ink blocks are neutral
+    return ratio, block
 
 
 def noise_check(img, threshold=0.65):

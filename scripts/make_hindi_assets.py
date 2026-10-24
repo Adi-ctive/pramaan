@@ -6,7 +6,7 @@ import sys
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
-CSS = """body{font-family:'Nirmala UI','Noto Sans Devanagari',sans-serif;margin:48px;color:#111}h1{font-size:22px}
+CSS = """@page{margin:0}body{font-family:'Nirmala UI','Noto Sans Devanagari',sans-serif;margin:0;padding:48px;color:#111}h1{font-size:22px}
 .hdr{background:#1f3866;color:#fff;padding:14px 18px;margin:-48px -48px 24px}.hdr b{font-size:18px}.hdr small{display:block;font-size:11px}
 p{font-size:15px;line-height:1.7;margin:6px 0}.seal{position:absolute;right:90px;bottom:120px;width:110px;height:110px;border:3px solid #3350b0;
 border-radius:50%;color:#3350b0;font-size:11px;display:flex;align-items:center;justify-content:center;text-align:center}
