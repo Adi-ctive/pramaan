@@ -127,5 +127,5 @@ def test_carry_forward(seeded):
     clone = {k: v for k, v in d.items() if k != "_id"}
     clone.update(id="DOC-CLONE", app_id="APP-OTHER")
     db.get_db().documents.insert_one(clone)
-    v = verify.carry_forward(clone, {**a, "id": "APP-OTHER"})
-    assert v and v["status"] == "VERIFIED" and v["details"]["carried_forward_from"]
+    vs = verify.carry_forward(clone, {**a, "id": "APP-OTHER"})
+    assert vs and all(v["status"] == "VERIFIED" and v["details"]["carried_forward_from"] for v in vs)

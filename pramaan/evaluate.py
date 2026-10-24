@@ -294,9 +294,9 @@ def rule_level(pack, insts=("INST-011", "INST-003")):
                                                          [("Receipt No", f"TR/2026/{690000 + j}"), ("Received from", s), ("Amount (INR)", "1,50,000"), ("Paid on", "05-10-2026")],
                                                          ["Item", "Amount (INR)"], [["Processing fee", "1,00,000"], ["Inspection fee", "30,000"]], ["Total", "1,50,000"])
             elif v == "faculty count vs records":
-                rows = [[str(i + 1), f"Faculty Member {i + 1} (fictional)", "Assistant Professor", "M.Tech"] for i in range(rec["faculty_count"] - 5)]
+                frows = [[str(i + 1), f"Faculty Member {i + 1} (fictional)", "Assistant Professor", "M.Tech"] for i in range(rec["faculty_count"] - 5)]
                 slot("FACULTY_LIST")[2] = synth.table_pdf("Faculty List", f"{nm} (mock)", [("Institution", nm), ("As on", "01-10-2026")],
-                                                          ["S.No", "Name", "Designation", "Qualification"], rows, extra=["Faculty members on roll (illustrative)."])
+                                                          ["S.No", "Name", "Designation", "Qualification"], frows, extra=["Faculty members on roll (illustrative)."])
             elif v == "floor area below claim":
                 slot("FLOOR_PLAN")[2] = synth.floor_plan_pdf([("COMPUTER_LAB_1", 8, 6), ("CLASSROOM_1", 9, 7)], institution=nm)
             elif v == "PDF edited after signing":
@@ -355,8 +355,9 @@ def run_eval(n=6, quick=False):
     aerrs = []
     for k in range(n):  # floor plans: measured vs drawn area
         wm, hm = rnd.randint(5, 14), rnd.randint(4, 9)
-        plan = extract.floor_plan(synth.floor_plan_pdf([("COMPUTER_LAB_1", wm, hm)], scale=rnd.choice([50, 100, 200])))
-        aerrs.append(abs(plan["rooms"][0]["area_sqm"] - wm * hm) / (wm * hm))
+        plan = extract.floor_plan(synth.floor_plan_pdf([("COMPUTER_LAB_1", wm, hm)], scale=rnd.choice([100, 150, 200])))  # sizes that fit on A4
+        prooms = (plan or {}).get("rooms") or []
+        aerrs.append(abs(prooms[0]["area_sqm"] - wm * hm) / (wm * hm) if prooms else 1.0)  # an unmeasured plan counts as a full miss
     run["infrastructure"] = {"count_mae": round(float(np.mean(errs)), 2), "photos": len(errs), "detector": det,
                              "video_count_mae": round(float(np.mean(verrs)), 2), "videos": len(verrs),
                              "floor_area_error": round(float(np.mean(aerrs)), 4), "floor_plans": len(aerrs),

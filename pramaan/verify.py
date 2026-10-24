@@ -152,10 +152,14 @@ def carry_forward(doc, app):
     db = get_db()
     same = [x["id"] for x in db.documents.find({"sha256": doc.get("sha256"), "id": {"$ne": doc["id"]}}, {"id": 1, "app_id": 1})
             if (db.applications.find_one({"id": x["app_id"]}, {"institution_id": 1}) or {}).get("institution_id") == app["institution_id"]]
-    if not same:
-        return None
-    prev = db.verifications.find_one({"doc_id": {"$in": same}, "status": "VERIFIED"}, sort=[("ts", -1)])
-    if not prev:
-        return None
-    return _record(doc["id"], app["id"], prev["method"], prev["source"], "VERIFIED",
-                   {"carried_forward_from": prev["id"], "original_ts": prev["ts"], "reason": "Identical file verified earlier (carried forward)"})
+    for sid in same:
+        prev = list(db.verifications.find({"doc_id": sid}).sort("ts", 1))
+        latest = {}
+        for v in prev:
+            latest[v["method"]] = v
+        # only when every method on that identical file passed; a single mismatch means re-verify from scratch
+        if latest and all(v["status"] == "VERIFIED" for v in latest.values()):
+            return [_record(doc["id"], app["id"], v["method"], v["source"], "VERIFIED",
+                            {"carried_forward_from": v["id"], "original_ts": v["ts"], "reason": "Identical file verified earlier (carried forward)"})
+                    for v in latest.values()]
+    return None

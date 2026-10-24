@@ -1,8 +1,8 @@
 # Evaluation report (FULL mode)
 
-Run `EVAL-82C50261` at 2026-10-24T07:56 UTC, 6 samples per class, 1117.2 s.
+Run `EVAL-DCDE6718` at 2026-10-24T12:27 UTC, 6 samples per class, 1347.7 s.
 All material is freshly generated synthetic data with known answers. Numbers are as measured.
-Note: this run read the live database, so the processing-time row describes the seeded applications that the hosted LITE build validated. Measured FULL time on the RTX 4050 is about 29 s per application and 4.3 s per document (local run EVAL-A4946E82).
+This run read the live database, so the processing-time row describes the seeded applications that the hosted LITE build validated. FULL processing on the RTX 4050 measured about 29 s per application and 4.3 s per document.
 
 | Metric | Value |
 |---|---|
@@ -12,15 +12,18 @@ Note: this run read the live database, so the processing-time row describes the 
 | Printed CER, scanned (OCR Model) | 0.0% |
 | Handwriting CER | 5.5% |
 | Handwriting exact match | 50.0% (18 fields) |
-| Validation: single-defect apps flagged exactly right | 100.0% (24 apps) |
-| Seeded discrepancy recall | 100.0% (14/14) |
+| Hindi scanned fields: CER / exact match | 0.0% / 100.0% (18 fields) |
+| Validation: single-defect apps flagged exactly right | 100.0% (30 apps) |
+| Seeded discrepancy recall | 100.0% (16/16) |
 | HIGH/MEDIUM flags on golden apps | 0 |
 | Source-verification success (golden) | 100.0% of 14 verifiable |
-| Lab monitor count MAE | 4.0 over 12 photos (Object Detector (FULL, open-vocabulary)) |
-| Room-type accuracy | 83.3% |
-| Avg processing time | 1741 ms/app, 256 ms/doc |
+| Lab monitor count MAE | 2.25 over 12 photos (Object Detector (FULL, open-vocabulary)) |
+| Room-type accuracy | 75.0% |
+| Walkthrough video count MAE (best frame) | 0.67 over 3 videos |
+| Floor-plan area error (vector plans) | 0.0% over 6 plans |
+| Avg processing time | 2064 ms/app, 258 ms/doc |
 | Alert delay | 0.0 ms (Alerts are raised in the same run that finds the condition; delay is measured in-process.) |
-| Estimated manual effort reduction | 86.3% (assumes 6.0 min/doc baseline, 2.0 min/flag) |
+| Estimated manual effort reduction | 85.0% (assumes 6.0 min/doc baseline, 2.0 min/flag) |
 
 ## Anomaly detection per forgery type
 
@@ -54,6 +57,9 @@ Note: this run read the live database, so the processing-time row describes the 
 | DUPLICATE_ACROSS_INSTITUTIONS | 1.0 | 1.0 | 2/0/0 |
 | QR_MISMATCH | 1.0 | 1.0 | 2/0/0 |
 | PDF_MODIFIED_AFTER_SIGNING | 1.0 | 1.0 | 2/0/0 |
+| FEE_TOTAL_MISMATCH | 1.0 | 1.0 | 2/0/0 |
+| FACULTY_COUNT_MISMATCH | 1.0 | 1.0 | 2/0/0 |
+| AREA_SHORTFALL | 1.0 | 1.0 | 2/0/0 |
 
 | Variant | Institution | Expected | Found (HIGH/MEDIUM) |
 |---|---|---|---|
@@ -81,12 +87,18 @@ Note: this run read the live database, so the processing-time row describes the 
 | QR payload mismatch | INST-003 | QR_MISMATCH | QR_MISMATCH |
 | PDF edited after signing | INST-011 | PDF_MODIFIED_AFTER_SIGNING | PDF_MODIFIED_AFTER_SIGNING |
 | PDF edited after signing | INST-003 | PDF_MODIFIED_AFTER_SIGNING | PDF_MODIFIED_AFTER_SIGNING |
+| fee items do not add up | INST-011 | FEE_TOTAL_MISMATCH | FEE_TOTAL_MISMATCH |
+| fee items do not add up | INST-003 | FEE_TOTAL_MISMATCH | FEE_TOTAL_MISMATCH |
+| faculty count vs records | INST-011 | FACULTY_COUNT_MISMATCH | FACULTY_COUNT_MISMATCH |
+| faculty count vs records | INST-003 | FACULTY_COUNT_MISMATCH | FACULTY_COUNT_MISMATCH |
+| floor area below claim | INST-011 | AREA_SHORTFALL | AREA_SHORTFALL |
+| floor area below claim | INST-003 | AREA_SHORTFALL | AREA_SHORTFALL |
 
 ## Seeded demo applications
 
 | Application | Missed | Other flags |
 |---|---|---|
-| DONOR | none | - |
+| DONOR | none | INFRA_SHORTFALL, MEDIA_NOT_ANALYSED |
 | GOLDEN-A | none | - |
 | PROBLEM-A | none | - |
 | GOLDEN-B | none | - |

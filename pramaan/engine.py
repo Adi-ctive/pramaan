@@ -263,7 +263,7 @@ def doc_stage(d, pack, app, ref, route=None, trace=None):
     vids = []
     cf = None if r.get("scanned") and not r.get("ocr_used") else verify.carry_forward(d, app)
     if cf:
-        vids.append(cf["id"])
+        vids += [v["id"] for v in cf]
     else:
         if "pdf_sig" in methods and r.get("pdf_sig"):
             vids.append(verify.record_pdf_sig(d["id"], app_id, r["pdf_sig"])["id"])

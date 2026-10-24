@@ -181,7 +181,8 @@ def floor_plan(data):
         words = page.extract_words()
         rooms = []
         for r in rects:
-            inside = [w["text"] for w in words if r["x0"] < w["x0"] and w["x1"] < r["x1"] and r["top"] < w["top"] and w["bottom"] < r["bottom"]]
+            # a label belongs to the room it starts in (long labels may run past a small room's wall)
+            inside = [w["text"] for w in words if r["x0"] < w["x0"] < r["x1"] and r["top"] < w["top"] and w["bottom"] < r["bottom"]]
             label = next((w for w in inside if re.match(r"^[A-Z]+(_[A-Z]+)*_\d+$", w)), None)
             if label:
                 W, H = page.width, page.height

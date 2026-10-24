@@ -32,23 +32,26 @@ How this differs from the original Docker/Postgres plan, and why: DECISIONS.md.
 | 7 | Evaluation page shows the PS metrics | Pass (local) |
 | 8 | Runs in LITE on CPU | Pass (local and live) |
 
-## Measured metrics (synthetic test set, 6 samples per class)
+## Measured metrics (synthetic test set, 6 samples per class, run against the live database)
 
 | Metric | LITE (CPU) | FULL (RTX 4050) |
 |---|---|---|
 | Field exact match, digital PDFs | 100% (114 fields) | 100% |
 | Field exact match, scanned printed | not available | 100% |
 | Handwriting CER / exact match | not available (manual review) | 5.5% / 50% (18 fields) |
-| Single-defect applications flagged exactly right | 100% (24) | 100% (24) |
-| Seeded discrepancy recall | 100% (14/14) | 100% (14/14) |
+| Hindi scanned fields, CER / exact match | not available | 0% / 100% (18 fields) |
+| Single-defect applications flagged exactly right | 100% (30) | 100% (30) |
+| Seeded discrepancy recall | 100% (16/16) | 100% (16/16) |
 | HIGH/MEDIUM flags on golden apps | 0 | 0 |
 | Source verification success, golden | 100% of 14 | 100% of 14 |
 | Forgery detection (12 types) | F1 1.0 on 11 types, reused photo 0.91 | same |
-| Lab monitor count MAE | 0.0 (classical counter, synthetic photos only) | 4.0 (open-vocabulary detector) |
-| Room-type accuracy | not available | 83.3% |
-| Processing time | about 1.7 s per application | about 29 s per application |
+| Lab monitor count MAE, photos | 0.0 (classical counter, synthetic only) | 2.25 (open-vocabulary detector) |
+| Walkthrough video count MAE | 1.0 | 0.67 |
+| Floor-plan area error (vector) | 0.0% | 0.0% |
+| Room-type accuracy | not available | 75% |
+| Processing time | about 1.7 to 2.1 s per application | about 29 s per application |
 
-Weak spots, as measured: the FULL detector undercounts dense synthetic labs (MAE 4.0, worse than the classical counter on these drawings).
+Weak spots, as measured: the FULL detector miscounts dense synthetic labs (MAE 2.25, worse than the classical counter on these drawings). Room type is right 75% of the time.
 Handwriting exact match is 50% even though the character error rate is low. Everything is synthetic, so real scans will score lower.
 Full tables: EVAL-LITE.md and EVAL-FULL.md.
 

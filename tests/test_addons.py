@@ -20,6 +20,17 @@ def test_floor_plan_areas():
     assert extract.floor_plan(synth.pdf_doc("Not a plan", "x", [("A", "b")])) is None
 
 
+def test_carry_forward_skips_files_with_a_mismatch(seeded):
+    from pramaan import verify
+    d = db.get_db()
+    acc = d.documents.find_one({"app_id": seeded["apps"]["PROBLEM-A"], "slot": "ACCREDITATION"})  # QR mismatch on this file
+    a = d.applications.find_one({"id": seeded["apps"]["PROBLEM-A"]})
+    clone = {k: v for k, v in acc.items() if k != "_id"}
+    clone.update(id="DOC-CLONE-ACC", app_id="APP-OTHER-ACC")
+    d.documents.insert_one(clone)
+    assert verify.carry_forward(clone, {**a, "id": "APP-OTHER-ACC"}) is None
+
+
 def test_video_frames_count():
     frames = extract.video_frames(synth.lab_video(15, seed=3))
     assert 2 <= len(frames) <= 8 and max(infra.classical_count(f) for f in frames) == 15
