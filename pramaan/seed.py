@@ -232,7 +232,8 @@ def build_docs(cx, inst, kind, n):
 def reset(samples_dir=None, password=None, run=True):
     db = get_db()
     for c in db.list_collection_names():
-        db[c].drop()
+        if c != "eval_runs":  # evaluation history survives a demo reset
+            db[c].drop()
     for f in ("aicte-demo-2026-27.yaml", "university-affiliation-demo.yaml"):
         text = rulepack.load_file(f)
         p, errs = rulepack.parse(text)
