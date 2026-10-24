@@ -2,7 +2,9 @@ import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { api, Chip, SEV } from "../api";
 import { useUser } from "../ctx";
-import { CATEGORY } from "../labels";
+import { AlertTriangle, ChevronRight, ShieldAlert, ShieldCheck } from "lucide-react";
+import { CATEGORY, CHECKS } from "../labels";
+import { CHECK_ICON, Tour } from "../ui";
 
 function useData<T = any>(path: string, deps: any[] = []): [T | null, () => void, string] {
   const [d, setD] = useState<T | null>(null);
@@ -30,55 +32,62 @@ function Bars({ data, color = "bg-blue-700" }: { data: Record<string, number>; c
 export function Queue() {
   const [rows] = useData<any[]>("/queue");
   const [q, setQ] = useState("");
-  const [host, setHost] = useState("");
+  const [show, setShow] = useState<"all" | "review" | "clean">("all");
   const nav = useNavigate();
-  if (!rows) return <div className="text-sm text-slate-500">Loading applications…</div>;
-  const hosts = [...new Set(rows.map((r) => r.host))];
-  const shown = rows.filter((r) => (!host || r.host === host) && (!q || JSON.stringify(r).toLowerCase().includes(q.toLowerCase())));
-  const serious = rows.filter((r) => r.counts.HIGH > 0).length;
-  const clean = rows.filter((r) => !r.counts.HIGH && !r.counts.MEDIUM).length;
+  if (!rows) return <div className="text-sm text-slate-500 p-6">Loading applications…</div>;
+  const bad = (r: any) => r.counts.HIGH > 0, warn = (r: any) => !bad(r) && r.counts.MEDIUM > 0;
+  const needs = rows.filter((r) => bad(r) || warn(r));
+  const shown = rows.filter((r) => (show === "all" || (show === "review" ? bad(r) || warn(r) : !bad(r) && !warn(r))) &&
+    (!q || `${r.institution} ${r.institution_id} ${r.external_ref}`.toLowerCase().includes(q.toLowerCase())));
   return (
-    <div className="space-y-4">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">Applications to review</h1>
-        <p className="text-sm text-slate-500">Already checked by PRAMAAN. The ones needing most attention are on top. Click one to see what was found.</p>
+    <div className="space-y-5 max-w-5xl">
+      <Tour id="queue" steps={[
+        { sel: "[data-tour=summary]", text: "Colleges send their approval documents. PRAMAAN checks every one before you open the file." },
+        { sel: "[data-tour=card]", text: "Each card is one application. Red means serious problems were found. The little icons are the 9 checks." },
+        { sel: "[data-tour=open]", text: "Click to open it. PRAMAAN walks you through each problem, one at a time." },
+      ]} />
+      <div data-tour="summary">
+        <h1 className="text-3xl font-bold tracking-tight">Applications to review</h1>
+        <p className="text-slate-500 mt-1">{needs.length ? `${needs.length} of ${rows.length} need your attention. The worst are on top.` : "Nothing needs attention right now."}</p>
       </div>
-      <div className="grid grid-cols-3 gap-3">
-        <div className="card p-4"><div className="text-3xl font-extrabold">{rows.length}</div><div className="text-sm text-slate-500">applications</div></div>
-        <div className="card p-4 border-l-4 border-l-red-500"><div className="text-3xl font-extrabold text-red-600">{serious}</div><div className="text-sm text-slate-500">have serious problems</div></div>
-        <div className="card p-4 border-l-4 border-l-emerald-500"><div className="text-3xl font-extrabold text-emerald-600">{clean}</div><div className="text-sm text-slate-500">passed every check</div></div>
+      <div className="flex flex-wrap gap-2 items-center">
+        {([["all", `All (${rows.length})`], ["review", `Needs review (${needs.length})`], ["clean", `Passed (${rows.length - needs.length})`]] as const).map(([k, l]) => (
+          <button key={k} onClick={() => setShow(k)} className={`px-3 py-1.5 rounded-full text-sm border ${show === k ? "bg-slate-900 text-white border-slate-900 dark:bg-white dark:text-slate-900" : "bg-white dark:bg-slate-900 border-slate-300 dark:border-slate-700"}`}>{l}</button>
+        ))}
+        <div className="flex-1" />
+        <input className="inp w-64" placeholder="Find a college" value={q} onChange={(e) => setQ(e.target.value)} />
       </div>
-      <div className="flex flex-wrap gap-2">
-        <input className="inp flex-1 min-w-[200px]" placeholder="Search by college, ID or reference" value={q} onChange={(e) => setQ(e.target.value)} />
-        <select className="inp" value={host} onChange={(e) => setHost(e.target.value)}><option value="">From any portal</option>{hosts.map((h) => <option key={h}>{h}</option>)}</select>
-      </div>
-      <div className="space-y-2">
-        {shown.map((r) => {
-          const bad = r.counts.HIGH > 0, warn = !bad && r.counts.MEDIUM > 0;
+      <div className="space-y-3">
+        {shown.map((r, i) => {
+          const Icon = bad(r) ? ShieldAlert : warn(r) ? AlertTriangle : ShieldCheck;
+          const tone = bad(r) ? "bg-red-100 text-red-600 dark:bg-red-950" : warn(r) ? "bg-amber-100 text-amber-600 dark:bg-amber-950" : "bg-emerald-100 text-emerald-600 dark:bg-emerald-950";
           return (
-            <button key={r.id} onClick={() => nav(`/app/${r.id}`)} className={`card w-full text-left p-4 hover:shadow-md transition border-l-4 ${bad ? "border-l-red-500" : warn ? "border-l-amber-400" : "border-l-emerald-500"}`}>
-              <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-                <div className="flex-1 min-w-[220px]">
-                  <div className="font-semibold text-base">{r.institution}</div>
-                  <div className="text-xs text-slate-500">{CATEGORY[r.category] || r.category} · via {r.host} · {r.region} region · submitted {r.submitted}</div>
+            <div key={r.id} data-tour={i === 0 ? "card" : undefined} onClick={() => nav(`/app/${r.id}`)}
+              className="card p-4 flex flex-wrap items-center gap-4 cursor-pointer hover:shadow-md hover:-translate-y-0.5 transition">
+              <div className={`w-14 h-14 rounded-2xl grid place-items-center shrink-0 ${tone}`}><Icon size={30} strokeWidth={1.8} /></div>
+              <div className="flex-1 min-w-[220px]">
+                <div className="text-lg font-semibold leading-tight">{r.institution}</div>
+                <div className={`text-sm font-medium mt-0.5 ${bad(r) ? "text-red-600" : warn(r) ? "text-amber-600" : "text-emerald-600"}`}>
+                  {bad(r) ? `${r.counts.HIGH} serious problem${r.counts.HIGH > 1 ? "s" : ""}${r.counts.MEDIUM ? `, ${r.counts.MEDIUM} to check` : ""}` : warn(r) ? `${r.counts.MEDIUM} thing${r.counts.MEDIUM > 1 ? "s" : ""} to check` : "All 9 checks passed"}
+                  {r.decided && <span className="text-slate-500 font-normal"> · decision recorded</span>}
                 </div>
-                <div className="text-sm">
-                  {bad ? <span className="font-semibold text-red-600">{r.counts.HIGH} serious problem{r.counts.HIGH > 1 ? "s" : ""}</span>
-                    : warn ? <span className="font-semibold text-amber-600">Needs a look</span> : <span className="font-semibold text-emerald-600">All checks passed</span>}
-                  {(r.counts.MEDIUM > 0 && bad) && <span className="text-slate-500"> · {r.counts.MEDIUM} to check</span>}
-                </div>
-                <div className="text-xs text-slate-500 w-36">{r.verification?.verified} of {r.verification?.total} documents confirmed with issuer</div>
-                <div className="w-28">
-                  <div className="h-1.5 bg-slate-200 dark:bg-slate-700 rounded"><div className={`h-1.5 rounded ${bad ? "bg-red-500" : warn ? "bg-amber-400" : "bg-emerald-500"}`} style={{ width: `${Math.max(r.risk, 4)}%` }} /></div>
-                  <div className="text-[10px] text-slate-400 mt-0.5">attention score {r.risk}/100</div>
-                </div>
-                {r.decided && <Chip text="Decision recorded" cls="bg-emerald-100 text-emerald-800" />}
+                <div className="text-xs text-slate-500 mt-0.5">{CATEGORY[r.category] || r.category} · {r.host} · {r.region} region</div>
               </div>
-            </button>
+              <div className="flex gap-1" aria-label="The 9 checks">
+                {CHECKS.map((c) => {
+                  const hits = (r.codes || []).filter(([code]: any) => c.codes.includes(code));
+                  const CI = CHECK_ICON[c.key];
+                  const col = hits.some(([, s]: any) => s === "HIGH") ? "text-red-600 bg-red-50 dark:bg-red-950" : hits.some(([, s]: any) => s === "MEDIUM") ? "text-amber-600 bg-amber-50 dark:bg-amber-950" : hits.length ? "text-sky-600 bg-sky-50 dark:bg-sky-950" : "text-emerald-600 bg-emerald-50 dark:bg-emerald-950";
+                  return <span key={c.key} title={`${c.title}: ${hits.length ? `${hits.length} problem(s)` : "OK"}`} className={`w-7 h-7 rounded-lg grid place-items-center ${col}`}><CI size={15} /></span>;
+                })}
+              </div>
+              <button data-tour={i === 0 ? "open" : undefined} className={`px-4 py-2 rounded-lg font-medium inline-flex items-center gap-1 ${bad(r) || warn(r) ? "bg-slate-900 text-white dark:bg-orange-500" : "border border-slate-300 dark:border-slate-600"}`}>
+                {bad(r) || warn(r) ? "Review" : "View"} <ChevronRight size={16} /></button>
+            </div>
           );
         })}
+        {!shown.length && <div className="card p-6 text-center text-slate-500">No applications match.</div>}
       </div>
-      <p className="text-xs text-slate-400">The attention score only sorts the list. It is not a decision.</p>
     </div>
   );
 }

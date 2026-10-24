@@ -2,6 +2,7 @@ import React, { useContext, useEffect, useState } from "react";
 import ReactDOM from "react-dom/client";
 import { BrowserRouter, Link, NavLink, Navigate, Route, Routes } from "react-router-dom";
 import "./index.css";
+import { BarChart3, Bell, ChevronRight, ClipboardList, FileCheck2, Gavel, Inbox, MapPin, Plug, ScanSearch, ShieldCheck, Upload } from "lucide-react";
 import { api } from "./api";
 import { Ctx, User } from "./ctx";
 import { DEMO_STEPS, ROLES } from "./labels";
@@ -33,69 +34,75 @@ function Landing({ onDone }: { onDone: () => void }) {
     try { await api("/auth/login", { json: { username: u, password: p, ...(totp ? { totp } : {}) } }); onDone(); }
     catch (x: any) { if (x.message === "totp_required") { setTotp(""); setErr("Enter the 6-digit code from your authenticator app."); } else setErr(x.message); }
   };
-  const users = DEMO_ORDER.map((n) => demo.find((d) => d.username === n)).filter(Boolean);
+  const others = DEMO_ORDER.slice(1).map((n) => demo.find((d) => d.username === n)).filter(Boolean);
+  const flow = [
+    { icon: Upload, title: "College uploads", text: "on its usual portal" },
+    { icon: ScanSearch, title: "PRAMAAN checks", text: "9 checks in seconds" },
+    { icon: MapPin, title: "Problems pinned", text: "on the exact spot" },
+    { icon: Gavel, title: "Officer decides", text: "one problem at a time" },
+  ];
   return (
     <div className="min-h-screen bg-slate-950 text-white">
-      <div className="max-w-6xl mx-auto px-4 py-6 flex items-center gap-3">
+      <div className="max-w-6xl mx-auto px-4 py-5 flex items-center gap-3">
         <Logo /><div className="font-extrabold tracking-tight text-lg">PRAMAAN</div>
         <span className="text-xs text-slate-400 hidden sm:inline">Smart India Hackathon 2026 · SIH26261</span>
-        <div className="flex-1" />
-        <a href="/host-a/" className="text-sm text-slate-300 hover:text-white">Institution portal (mock)</a>
       </div>
-      <section className="max-w-6xl mx-auto px-4 pt-8 pb-12 grid lg:grid-cols-[1.2fr_1fr] gap-10 items-center">
-        <div>
-          <div className="inline-block text-xs font-semibold px-2 py-1 rounded-full bg-orange-500/15 text-orange-300 mb-4">AI-assisted scrutiny for AICTE approvals</div>
-          <h1 className="text-4xl md:text-5xl font-extrabold tracking-tight leading-tight">Every document checked<br />before an officer opens the file.</h1>
-          <p className="mt-4 text-slate-300 text-lg max-w-xl">
-            Institutions upload approval documents. PRAMAAN reads them, checks them against the rules and AICTE records, confirms them with the issuing office,
-            and shows officers exactly what is wrong and where. Officers still make every decision.
-          </p>
-          <div className="mt-6 grid sm:grid-cols-3 gap-3 text-sm">
-            {[["1", "Institution uploads", "on its usual portal, through a small PRAMAAN widget"], ["2", "PRAMAAN checks", "9 kinds of checks in seconds, each with evidence"], ["3", "Officer reviews", "worst cases first, confirms or dismisses each finding"]].map(([n, t, d]) => (
-              <div key={n} className="rounded-xl bg-white/5 border border-white/10 p-3">
-                <div className="text-orange-300 font-bold">{n}</div><div className="font-semibold">{t}</div><div className="text-slate-400 text-xs mt-1">{d}</div>
-              </div>
-            ))}
-          </div>
-        </div>
-        <div className="rounded-2xl bg-white text-slate-900 p-5 shadow-2xl">
-          <div className="font-bold text-lg">Try the live demo</div>
-          <div className="text-sm text-slate-500 mb-3">One click, no password. All institutions, issuers and documents are fictional.</div>
-          <div className="space-y-2">
-            {users.map((d: any) => (
-              <button key={d.username} onClick={() => enter(d.username)} className="w-full text-left rounded-xl border border-slate-200 hover:border-orange-400 hover:bg-orange-50 p-3 transition">
-                <div className="font-semibold">Enter as {ROLES[d.role]?.name || d.role}{d.username === "officer.west" ? " (West)" : ""}</div>
-                <div className="text-xs text-slate-500">{ROLES[d.role]?.does}</div>
-              </button>
-            ))}
-            <a href="/host-a/" className="block rounded-xl border border-slate-200 hover:border-orange-400 hover:bg-orange-50 p-3">
-              <div className="font-semibold">Upload as an institution</div><div className="text-xs text-slate-500">{ROLES.INSTITUTION.does}</div>
-            </a>
-          </div>
-          {err && <div className="text-sm text-red-600 mt-2">{err}</div>}
-          <details className="mt-3 text-sm">
-            <summary className="cursor-pointer text-slate-500">Sign in with a password</summary>
-            <form onSubmit={login} className="mt-2 space-y-2">
-              <input className="inp w-full" placeholder="Username" value={u} onChange={(e) => setU(e.target.value)} autoComplete="username" />
-              <input className="inp w-full" placeholder="Password" type="password" value={p} onChange={(e) => setP(e.target.value)} autoComplete="current-password" />
-              {totp !== null && <input className="inp w-full" placeholder="Authenticator code" inputMode="numeric" value={totp} onChange={(e) => setTotp(e.target.value)} autoComplete="one-time-code" />}
-              <button className="btn w-full">Sign in</button>
-            </form>
-          </details>
+      <section className="max-w-5xl mx-auto px-4 pt-10 text-center">
+        <h1 className="text-4xl md:text-6xl font-extrabold tracking-tight leading-[1.05]">Catch problems in approval documents<br className="hidden md:block" /> <span className="text-orange-400">before</span> anyone opens the file.</h1>
+        <p className="mt-5 text-slate-300 text-lg max-w-2xl mx-auto">AI checks every document a college sends to AICTE and points to exactly what is wrong. Officers make every decision.</p>
+      </section>
+
+      <section className="max-w-5xl mx-auto px-4 mt-10 grid md:grid-cols-2 gap-4">
+        <button onClick={() => enter("senior")} className="group text-left rounded-3xl bg-white text-slate-900 p-7 shadow-2xl hover:-translate-y-1 transition">
+          <div className="w-14 h-14 rounded-2xl bg-orange-100 text-orange-600 grid place-items-center"><Gavel size={28} /></div>
+          <div className="text-2xl font-bold mt-4">I review applications</div>
+          <div className="text-slate-500 mt-1">See what PRAMAAN found, problem by problem, and decide.</div>
+          <div className="mt-5 inline-flex items-center gap-1 font-semibold text-orange-600 group-hover:gap-2 transition-all">Enter as Senior Officer <ChevronRight size={18} /></div>
+        </button>
+        <a href="/host-a/" className="group text-left rounded-3xl bg-white/5 border border-white/15 p-7 hover:bg-white/10 hover:-translate-y-1 transition">
+          <div className="w-14 h-14 rounded-2xl bg-white/10 text-white grid place-items-center"><Upload size={28} /></div>
+          <div className="text-2xl font-bold mt-4">I'm a college</div>
+          <div className="text-slate-300 mt-1">Upload documents on a sample portal and get instant feedback.</div>
+          <div className="mt-5 inline-flex items-center gap-1 font-semibold text-orange-300 group-hover:gap-2 transition-all">Open the college portal <ChevronRight size={18} /></div>
+        </a>
+      </section>
+      {err && <div className="text-center text-sm text-red-400 mt-3">{err}</div>}
+
+      <section className="max-w-5xl mx-auto px-4 mt-14">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          {flow.map((f, i) => (
+            <div key={f.title} className="relative rounded-2xl bg-white/5 border border-white/10 p-4 text-center">
+              <div className="mx-auto w-12 h-12 rounded-full bg-orange-500/15 text-orange-300 grid place-items-center"><f.icon size={22} /></div>
+              <div className="font-semibold mt-3">{f.title}</div>
+              <div className="text-sm text-slate-400">{f.text}</div>
+              {i < flow.length - 1 && <ChevronRight className="hidden md:block absolute -right-4 top-1/2 -translate-y-1/2 text-slate-600" />}
+            </div>
+          ))}
         </div>
       </section>
-      <section className="bg-slate-900 border-t border-white/10">
-        <div className="max-w-6xl mx-auto px-4 py-10">
-          <h2 className="text-xl font-bold mb-4">What the demo shows</h2>
-          <ol className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
-            {DEMO_STEPS.map((s, i) => (
-              <li key={i} className="rounded-xl bg-white/5 border border-white/10 p-3 text-sm">
-                <div className="text-orange-300 text-xs font-bold">STEP {i + 1}</div><div className="font-semibold">{s.title}</div><div className="text-slate-400 text-xs mt-1">{s.body}</div>
-              </li>
+
+      <section className="max-w-5xl mx-auto px-4 mt-12 pb-14 grid md:grid-cols-2 gap-6 text-sm">
+        <details className="rounded-2xl bg-white/5 border border-white/10 p-4">
+          <summary className="cursor-pointer font-semibold">Other demo roles</summary>
+          <div className="mt-3 space-y-2">
+            {others.map((d: any) => (
+              <button key={d.username} onClick={() => enter(d.username)} className="w-full text-left rounded-xl bg-white/5 hover:bg-white/10 p-3">
+                <div className="font-medium">{ROLES[d.role]?.name}{d.username === "officer.west" ? " (West region)" : ""}</div>
+                <div className="text-slate-400 text-xs">{ROLES[d.role]?.does}</div>
+              </button>
             ))}
-          </ol>
-          <p className="text-xs text-slate-500 mt-6">Prototype. Findings are decision support only. Statutory scrutiny, inspections and final decisions stay with the competent authority.</p>
-        </div>
+          </div>
+        </details>
+        <details className="rounded-2xl bg-white/5 border border-white/10 p-4">
+          <summary className="cursor-pointer font-semibold">Sign in with a password</summary>
+          <form onSubmit={login} className="mt-3 space-y-2 text-slate-900">
+            <input className="inp w-full" placeholder="Username" value={u} onChange={(e) => setU(e.target.value)} autoComplete="username" />
+            <input className="inp w-full" placeholder="Password" type="password" value={p} onChange={(e) => setP(e.target.value)} autoComplete="current-password" />
+            {totp !== null && <input className="inp w-full" placeholder="Authenticator code" inputMode="numeric" value={totp} onChange={(e) => setTotp(e.target.value)} autoComplete="one-time-code" />}
+            <button className="btn w-full">Sign in</button>
+          </form>
+        </details>
+        <p className="md:col-span-2 text-xs text-slate-500 text-center">All colleges, issuers and documents here are fictional. Findings are decision support only.</p>
       </section>
     </div>
   );
@@ -166,18 +173,18 @@ function Shell() {
   if (!user) return null;
   const c = user.caps;
   const nav = [
-    ["/", "Applications", c.includes("view_queue")], ["/dashboard", "Overview", c.includes("view_queue")], ["/alerts", "Alerts", c.includes("view_queue")],
-    ["/evaluation", "Accuracy", true], ["/rules", "Checklist rules", true], ["/hosts", "Connected portals", c.includes("manage_hosts")],
-    ["/audit", "Audit trail", c.includes("audit")],
-  ].filter((x) => x[2]) as [string, string][];
+    ["/", "Applications", c.includes("view_queue"), Inbox], ["/dashboard", "Overview", c.includes("view_queue"), BarChart3], ["/alerts", "Alerts", c.includes("view_queue"), Bell],
+    ["/evaluation", "Accuracy", true, FileCheck2], ["/rules", "Checklist rules", true, ClipboardList], ["/hosts", "Connected portals", c.includes("manage_hosts"), Plug],
+    ["/audit", "Audit trail", c.includes("audit"), ShieldCheck],
+  ].filter((x) => x[2]) as [string, string, boolean, any][];
   const home = c.includes("view_queue") ? "/" : c.includes("manage_hosts") ? "/hosts" : "/rules";
   const switchTo = async (username: string) => { await api("/auth/demo-login", { json: { username } }); reload(); };
   return (
     <div className="min-h-screen flex flex-col md:flex-row">
       <aside className="md:w-56 shrink-0 bg-slate-950 text-slate-300 p-3 flex md:flex-col gap-1 overflow-x-auto">
         <Link to="/" className="hidden md:flex items-center gap-2 mb-6 mt-1 px-1"><Logo size={8} /><div className="font-extrabold text-white tracking-tight">PRAMAAN</div></Link>
-        {nav.map(([to, label]) => (
-          <NavLink key={to} to={to} end className={({ isActive }) => `px-3 py-2 rounded-lg text-sm whitespace-nowrap ${isActive ? "bg-white/10 text-white font-semibold" : "hover:bg-white/5 hover:text-white"}`}>{label}</NavLink>
+        {nav.map(([to, label, , Icon]) => (
+          <NavLink key={to} to={to} end className={({ isActive }) => `px-3 py-2 rounded-lg text-sm whitespace-nowrap inline-flex items-center gap-2 ${isActive ? "bg-white/10 text-white font-semibold" : "hover:bg-white/5 hover:text-white"}`}><Icon size={16} />{label}</NavLink>
         ))}
         <div className="hidden md:block flex-1" />
         <button onClick={() => setGuide(true)} className="hidden md:block text-left px-3 py-2 rounded-lg text-sm bg-orange-500/15 text-orange-300 hover:bg-orange-500/25">Demo guide</button>
@@ -185,6 +192,7 @@ function Shell() {
       <div className="flex-1 min-w-0">
         <header className="flex flex-wrap items-center gap-2 px-4 py-2.5 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 text-sm">
           <button onClick={() => setGuide(true)} className="md:hidden btn2">Guide</button>
+          <button onClick={() => window.dispatchEvent(new Event("pramaan:tour"))} className="btn2 border-orange-300 text-orange-700 dark:text-orange-300">Show me around</button>
           <div className="flex-1" />
           <label className="text-xs text-slate-500 hidden sm:block">Viewing as</label>
           <select className="inp" value={user.sub} onChange={(e) => switchTo(e.target.value)} title="Switch demo role">

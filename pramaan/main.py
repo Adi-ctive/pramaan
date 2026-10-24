@@ -426,7 +426,10 @@ def queue(user=Depends(require("view_queue")), region: str = None, category: str
     if min_age_days is not None:
         apps = [a for a in apps if (sla(a) or {}).get("age_days", 0) >= min_age_days]
     hosts = {h["id"]: h["name"] for h in get_db().hosts.find()}
-    return [{"id": a["id"], "institution": a["form"]["institution_name"], "institution_id": a["institution_id"], "category": a["category"],
+    open_codes = {}
+    for f in get_db().flags.find({"app_id": {"$in": [a["id"] for a in apps]}, "current": True, "status": {"$ne": "DISMISSED"}}, {"app_id": 1, "code": 1, "severity": 1}):
+        open_codes.setdefault(f["app_id"], []).append([f["code"], f["severity"]])
+    return [{"codes": open_codes.get(a["id"], []), "id": a["id"], "institution": a["form"]["institution_name"], "institution_id": a["institution_id"], "category": a["category"],
              "host": hosts.get(a["host_id"]), "region": a["region"], "submitted": a.get("submitted_on"), "risk": a.get("risk", 0),
              "counts": a.get("counts", {}), "verification": a.get("verification", {}), "status": a["status"],
              "external_ref": a.get("external_ref"), "sla": sla(a), "decided": bool(a.get("decision"))} for a in apps]

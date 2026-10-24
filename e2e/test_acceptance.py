@@ -65,6 +65,7 @@ def browser(servers):
 @pytest.fixture
 def page(browser):
     ctx = browser.new_context(viewport={"width": 1440, "height": 1000})
+    ctx.add_init_script("try { localStorage.setItem('tour:off', '1') } catch (e) {}")  # guided tours would cover the page
     pg = ctx.new_page()
     pg.set_default_timeout(60_000)
     yield pg
@@ -73,7 +74,11 @@ def page(browser):
 
 def officer(page, role_button):
     page.goto(BASE + "/")
-    page.get_by_text(role_button, exact=True).click()
+    if role_button == "Enter as Senior Officer":
+        page.get_by_text("I review applications", exact=True).click()
+    else:
+        page.get_by_text("Other demo roles").click()
+        page.get_by_text(role_button.replace("Enter as ", ""), exact=True).click()
     expect(page.get_by_text("Viewing as")).to_be_visible()
 
 
@@ -143,13 +148,14 @@ def test_2_golden_all_green(page):
 def test_3_problem_findings(page):
     officer(page, "Enter as Senior Officer")
     open_app(page, "PROBLEM-A")
-    for text in ["Building Completion Certificate not uploaded", "Fire Safety NOC has expired", "Name mismatch",
-                 "Claimed intake equals approved intake", "possible local alteration", "Image matches a document from another institution",
-                 "qr mismatch", "scanned or handwritten", "computer monitors 12 detected / 30 claimed", "instruction-like text"]:
+    for text in ["Building Completion Certificate was not uploaded", "Fire Safety NOC expired on", "Name differs",
+                 "Claims 180 students, AICTE approved 120", "looks edited", "also appears in another college",
+                 "QR code says", "is handwritten", "12 computers seen in photos, 30 claimed", "hidden text aimed at the AI",
+                 "48 m² on the floor plan, 66 m² claimed"]:
         expect(page.get_by_text(text, exact=False).first).to_be_visible()
     page.get_by_role("button", name=re.compile("General Affidavit")).first.click()
     expect(page.get_by_text("Show edit heatmap", exact=False)).to_be_visible()
-    page.get_by_text("Compare with matching image", exact=False).first.click()
+    page.get_by_text("This image also appears in another college", exact=False).first.click()
     expect(page.get_by_text("Same photo found in another college", exact=False)).to_be_visible()
 
 
@@ -178,11 +184,10 @@ def test_5_dispose_and_gate(page):
     officer(page, "Enter as Senior Officer")
     aid = open_app(page, "PROBLEM-A")
     expect(page.get_by_role("button", name="Record decision note")).to_be_disabled()
-    card = page.locator("[id^=FLG-]").filter(has_text="Serious").first
-    card.get_by_role("button", name="Review").click()
-    card.get_by_placeholder("Why?", exact=False).fill("Checked with the issuer by phone (demo)")
-    card.get_by_role("button", name="Dismiss").click()
-    expect(page.get_by_text("dismissed", exact=False).first).to_be_visible()
+    page.get_by_role("button", name="Not a problem").click()
+    page.get_by_placeholder("Why is it not a problem", exact=False).fill("Checked with the issuer by phone (demo)")
+    page.get_by_role("button", name="Save").click()
+    expect(page.get_by_text("Marked not a problem", exact=False).first).to_be_visible()
     assert page.request.post(f"{BASE}/api/applications/{aid}/decision", data=json.dumps({"text": "x"}),
                              headers={"Content-Type": "application/json"}).status == 409
     for f in api(page, "GET", f"/applications/{aid}")["flags"]:
