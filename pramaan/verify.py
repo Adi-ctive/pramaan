@@ -113,6 +113,9 @@ def trust_roots():
 
 
 def check_pdf_sig(data):
+    import logging
+    logging.getLogger("pyhanko").setLevel(logging.CRITICAL)
+    logging.getLogger("pyhanko_certvalidator").setLevel(logging.CRITICAL)
     """Pure check: {status, signer, intact, valid, trusted, coverage, modification}. Status is VERIFIED,
     SIGNATURE_INVALID, MODIFIED_AFTER_SIGNING or NOT_SIGNED."""
     import io

@@ -684,7 +684,7 @@ def eval_runs(user=Depends(current_user)):
 @app.post("/api/eval/run")
 def eval_run(user=Depends(require("run_eval"))):
     from .evaluate import run_eval
-    r = run_eval()
+    r = run_eval(quick=os.environ.get("VERCEL") == "1")  # full run (with rule-level apps) is `python tasks.py eval`
     audit.record(user["sub"], "eval.run", r["id"])
     return r
 

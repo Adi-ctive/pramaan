@@ -97,8 +97,8 @@ def process_doc(doc, pack, app):
             res["qr"] = stage("qr", lambda: extract.read_qr(pdf))
         meta = pdf.get_metadata_dict()
         res["pdf_findings"] = stage("pdf_forensics", lambda: forensics.pdf_structure(data, meta)) or []
-        if (res.get("pdf_sig") or {}).get("status") == "VERIFIED":
-            res["pdf_findings"] = []  # the only later revision is the issuer's own signature
+        if (res.get("pdf_sig") or {}).get("status") in ("VERIFIED", "MODIFIED_AFTER_SIGNING"):
+            res["pdf_findings"] = []  # revisions are explained by the signature check itself
         imgs = [extract.render_page(pdf, i, 2) for i in range(len(pdf))] if scanned else []
         if scanned:
             emb = extract.page_images(pdf, 0)

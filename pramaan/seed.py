@@ -63,6 +63,21 @@ class Ctx:
         self.db.issuer_records.insert_one({"issuer_id": iid, "ref_no": ref_no, "fields": dict(fields, ref_no=ref_no)})
 
 
+def issuer_key(iid):
+    """Deterministic demo keys so the published sample files verify against any fresh seed."""
+    return Ed25519PrivateKey.from_private_bytes(hashlib.sha256((os.environ.get("ISSUER_KEY_SEED", "pramaan-demo-issuers") + iid).encode()).digest())
+
+
+def make_ctx():
+    """Generator context (keys, demo CA) for an already-seeded database, used by the evaluation harness."""
+    cx = Ctx()
+    cx.keys = {iid: issuer_key(iid) for iid, *_ in ISSUERS}
+    cx.ca_key, cx.ca_cert = synth.demo_ca()
+    cx.sigkeys = {iid: synth.issuer_cert(iid, name, cx.ca_key) for iid, name, _, _ in ISSUERS}
+    cx.donor_photo = synth.lab_photo(15, seed=999, wall=(225, 215, 200))
+    return cx
+
+
 def institutions():
     out = []
     for n in range(1, 31):
@@ -209,8 +224,7 @@ def reset(samples_dir=None, password=None, run=True):
         db.rule_packs.insert_one({"key": p["key"], "version": p["version"], "status": "ACTIVE", "yaml": text, "created": now().isoformat()})
     cx = Ctx()
     for iid, name, types, down in ISSUERS:
-        # deterministic demo keys so the published sample files verify against any fresh seed
-        k = Ed25519PrivateKey.from_private_bytes(hashlib.sha256((os.environ.get("ISSUER_KEY_SEED", "pramaan-demo-issuers") + iid).encode()).digest())
+        k = issuer_key(iid)
         cx.keys[iid] = k
         pub = k.public_key().public_bytes(serialization.Encoding.Raw, serialization.PublicFormat.Raw)
         db.issuers.insert_one({"id": iid, "name": name, "doc_types": types, "public_key": base64.urlsafe_b64encode(pub).decode().rstrip("="),
