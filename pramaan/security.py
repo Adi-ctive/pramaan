@@ -49,10 +49,30 @@ def check_password(h, pw):
         return False
 
 
-def make_token(user, minutes=480):
-    payload = {"sub": user["username"], "role": user["role"], "region": user.get("region", "ALL"),
+ACCESS_MIN, REFRESH_H = 15, 8
+
+
+def make_token(user, minutes=ACCESS_MIN, kind="access", jti=None):
+    payload = {"sub": user["username"], "role": user["role"], "region": user.get("region", "ALL"), "typ": kind,
                "exp": int(time.time()) + minutes * 60}
+    if jti:
+        payload["jti"] = jti
     return jwt.encode(payload, _secret(), algorithm="HS256")
+
+
+def issue_session(response, user):
+    """15-minute access cookie plus an 8-hour rotating refresh cookie (SameSite=Strict, refresh path only)."""
+    import secrets as _s
+    jti = _s.token_urlsafe(16)
+    get_db().refresh_tokens.insert_one({"jti": jti, "user": user["username"], "exp": int(time.time()) + REFRESH_H * 3600, "used": False})
+    secure = os.environ.get("VERCEL") == "1"
+    response.set_cookie("pramaan_session", make_token(user), httponly=True, samesite="lax", secure=secure, max_age=ACCESS_MIN * 60)
+    response.set_cookie("pramaan_refresh", make_token(user, REFRESH_H * 60, "refresh", jti), httponly=True, samesite="strict",
+                        secure=secure, max_age=REFRESH_H * 3600, path="/api/auth")
+
+
+def decode(tok):
+    return jwt.decode(tok, _secret(), algorithms=["HS256"])
 
 
 def current_user(request: Request):
@@ -60,9 +80,12 @@ def current_user(request: Request):
     if not tok:
         raise HTTPException(401, "Sign in required")
     try:
-        return jwt.decode(tok, _secret(), algorithms=["HS256"])
+        claims = decode(tok)
     except jwt.PyJWTError:
         raise HTTPException(401, "Session expired")
+    if claims.get("typ", "access") != "access":
+        raise HTTPException(401, "Wrong token type")
+    return claims
 
 
 def require(cap):
@@ -109,26 +132,62 @@ def hmac_ok(secret, body, sig):
 
 
 # ---- upload safety (§8). No ClamAV on serverless: signature scan + structure checks.
-MAX_BYTES = 4 * 1024 * 1024
-ALLOWED = {".pdf": b"%PDF", ".jpg": b"\xff\xd8\xff", ".jpeg": b"\xff\xd8\xff", ".png": b"\x89PNG"}
+MAX_BYTES = int(float(os.environ.get("MAX_UPLOAD_MB", "4")) * 1024 * 1024)  # Vercel request cap; 25 MB locally
+ALLOWED = {".pdf": b"%PDF", ".jpg": b"\xff\xd8\xff", ".jpeg": b"\xff\xd8\xff", ".png": b"\x89PNG", ".tif": (b"II*\x00", b"MM\x00*"),
+           ".tiff": (b"II*\x00", b"MM\x00*"), ".mp4": None, ".mov": None}
+MAX_PDF_PAGES = 300
+
+
+def clamd_scan(data):
+    """ClamAV INSTREAM when CLAMD_HOST is set. Returns a virus name, None if clean, or 'unavailable'."""
+    import socket
+    import struct
+    host = os.environ.get("CLAMD_HOST")
+    if not host:
+        return "unavailable"
+    try:
+        with socket.create_connection((host, int(os.environ.get("CLAMD_PORT", "3310"))), timeout=10) as sk:
+            sk.sendall(b"zINSTREAM\0")
+            for i in range(0, len(data), 8192):
+                chunk = data[i:i + 8192]
+                sk.sendall(struct.pack("!L", len(chunk)) + chunk)
+            sk.sendall(struct.pack("!L", 0))
+            reply = sk.recv(4096).decode(errors="ignore")
+        return reply.split("FOUND")[0].split(":")[-1].strip() if "FOUND" in reply else None
+    except OSError:
+        return "unavailable"
 EICAR = b"X5O!P%@AP[4\\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!"
 
 
 def check_upload(name, data):
     ext = os.path.splitext(name.lower())[1]
     if len(data) > MAX_BYTES:
-        return "File is larger than 4 MB"
+        return f"File is larger than {MAX_BYTES // (1024 * 1024)} MB"
     if ext not in ALLOWED:
-        return "Only PDF, JPG and PNG files are accepted"
-    if EICAR in data:
+        return "Only PDF, JPG, PNG, TIFF, MP4 and MOV files are accepted"
+    if data[:4] in (b"PK\x03\x04", b"Rar!") or data[:2] == b"\x1f\x8b":
+        return "Archives are not accepted"
+    virus = clamd_scan(data)
+    if virus not in (None, "unavailable"):
+        return f"File rejected by malware scan ({virus})"
+    if virus == "unavailable" and EICAR in data:  # signature fallback when no ClamAV daemon is reachable
         return "File rejected by malware scan (test signature EICAR)"
-    if not data.startswith(ALLOWED[ext]):
+    magic = ALLOWED[ext]
+    if ext in (".mp4", ".mov"):
+        if data[4:8] not in (b"ftyp", b"moov", b"mdat", b"wide"):
+            return "File content does not match its extension"
+        return None
+    if not data.startswith(magic if isinstance(magic, tuple) else (magic,)):
         return "File content does not match its extension"
     if ext == ".pdf":
-        if b"/JavaScript" in data or b"/Launch" in data or b"/EmbeddedFile" in data:
-            return "PDF contains active content and was rejected"
+        for tok in (b"/JavaScript", b"/JS", b"/Launch", b"/EmbeddedFile", b"/OpenAction"):
+            if tok in data:
+                return f"PDF contains active content ({tok.decode()}) and was rejected"
+        if data.count(b"/Type /Page") - data.count(b"/Type /Pages") > MAX_PDF_PAGES:
+            return f"PDF has more than {MAX_PDF_PAGES} pages"
     else:
         from PIL import Image
+        Image.MAX_IMAGE_PIXELS = 60_000_000  # decompression-bomb guard
         try:
             Image.open(io.BytesIO(data)).verify()
         except Exception:

@@ -56,6 +56,9 @@ class Ctx:
     def issuer_name(self, iid):
         return next(n for i, n, _, _ in ISSUERS if i == iid)
 
+    def sign(self, iid, pdf):
+        return synth.sign_pdf(pdf, *self.sigkeys[iid], self.ca_cert)
+
     def register(self, iid, ref_no, fields):
         self.db.issuer_records.insert_one({"issuer_id": iid, "ref_no": ref_no, "fields": dict(fields, ref_no=ref_no)})
 
@@ -105,9 +108,9 @@ def build_docs(cx, inst, kind, n):
         ld = f"LD/{st}/2019/{2000 + n}"
         lessee = s if kind != "PROBLEM-A" else "Narmada Vidhya Samiti"
         cx.register("ISS-SUB", ld, {"lessee": lessee, "valid_to": "2049-03-31"})
-        add("LAND_LEASE", "lease_deed.pdf", synth.pdf_doc("Lease Deed (registered)", cx.issuer_name("ISS-SUB"),
+        add("LAND_LEASE", "lease_deed.pdf", cx.sign("ISS-SUB", synth.pdf_doc("Lease Deed (registered)", cx.issuer_name("ISS-SUB"),
             [("Deed No", ld), ("Lessor", "Fictional Land Holdings (mock)"), ("Lessee", lessee), ("Executed on", "01-04-2019"),
-             ("Lease valid until", "31-03-2049"), ("Registered at", cx.issuer_name("ISS-SUB"))]))
+             ("Lease valid until", "31-03-2049"), ("Registered at", cx.issuer_name("ISS-SUB"))])))
         if kind == "PROBLEM-A":
             expect.append("NAME_MISMATCH")
 
@@ -135,9 +138,9 @@ def build_docs(cx, inst, kind, n):
         bc_iss = "ISS-CBA"
         bc = f"BC/{st}/2015/{4000 + n}"
         cx.register(bc_iss, bc, {"owner": s})
-        wrong = synth.pdf_doc("Building Completion Certificate", cx.issuer_name(bc_iss),
+        wrong = cx.sign(bc_iss, synth.pdf_doc("Building Completion Certificate", cx.issuer_name(bc_iss),
                               [("Certificate No", bc), ("Owner", s), ("Date of issue", "10-02-2015"), ("Built-up area (sq m)", "5200"),
-                               ("Issuing authority", cx.issuer_name(bc_iss))], extra=["Construction as per approved building plan (illustrative)."])
+                               ("Issuing authority", cx.issuer_name(bc_iss))], extra=["Construction as per approved building plan (illustrative)."]))
         add("FIRE_NOC", "fire_clearance.pdf", wrong)
         add("BUILDING_COMPLETION", "building_certificate.pdf", wrong)
         expect += ["WRONG_DOC_TYPE", "VERIFICATION_SOURCE_UNAVAILABLE"]
@@ -147,9 +150,9 @@ def build_docs(cx, inst, kind, n):
     if kind not in ("PROBLEM-A", "PROBLEM-B"):
         bc = f"BC/{st}/2015/{4000 + n}"
         cx.register("ISS-MBA", bc, {"owner": s})
-        add("BUILDING_COMPLETION", "building_completion.pdf", synth.pdf_doc("Building Completion Certificate", cx.issuer_name("ISS-MBA"),
+        add("BUILDING_COMPLETION", "building_completion.pdf", cx.sign("ISS-MBA", synth.pdf_doc("Building Completion Certificate", cx.issuer_name("ISS-MBA"),
             [("Certificate No", bc), ("Owner", s), ("Date of issue", "10-02-2015"), ("Built-up area (sq m)", "5200"),
-             ("Issuing authority", cx.issuer_name("ISS-MBA"))], extra=["Construction as per approved building plan (illustrative)."]))
+             ("Issuing authority", cx.issuer_name("ISS-MBA"))], extra=["Construction as per approved building plan (illustrative)."])))
     elif kind == "PROBLEM-A":
         expect.append("DOC_MISSING")
 
@@ -212,6 +215,10 @@ def reset(samples_dir=None, password=None, run=True):
         pub = k.public_key().public_bytes(serialization.Encoding.Raw, serialization.PublicFormat.Raw)
         db.issuers.insert_one({"id": iid, "name": name, "doc_types": types, "public_key": base64.urlsafe_b64encode(pub).decode().rstrip("="),
                                "down": down, "force_mismatch": False, "latency_ms": 0})
+    from cryptography.hazmat.primitives import serialization as ser
+    cx.ca_key, cx.ca_cert = synth.demo_ca()
+    db.trust_roots.insert_one({"name": synth.CA_CN, "pem": cx.ca_cert.public_bytes(ser.Encoding.PEM).decode()})
+    cx.sigkeys = {iid: synth.issuer_cert(iid, name, cx.ca_key) for iid, name, _, _ in ISSUERS}
     insts = institutions()
     for r in insts:
         r["contact_phone_enc"] = encrypt(f"+91-00000-{r['aicte_id'][-3:]}00")

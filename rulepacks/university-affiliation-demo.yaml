@@ -2,11 +2,14 @@ key: university-affiliation-demo
 version: 1.0.0
 effective_from: 2026-07-01
 demo_value: true
+default_source_ref: "APH 2026-27 (placeholder citation)"
 source_note: "Second illustrative pack for a university affiliation portal. Subset of rules, different slot wording on the host side."
 
 taxonomy:
   SOCIETY_REG:
     label: "Society / Trust Registration Certificate"
+    requires_regions: [stamp, signature]
+    retention_days: 2555
     keywords: ["society registration", "registrar of societies"]
     fields:
       society_name: {anchor: "Name of Society", type: entity_name, required: true}
@@ -16,6 +19,8 @@ taxonomy:
     verification: [ref_lookup]
   FIRE_NOC:
     label: "Fire Safety NOC"
+    requires_regions: [stamp, signature]
+    retention_days: 2555
     keywords: ["fire safety", "no objection certificate", "fire service"]
     fields:
       addressee: {anchor: "Issued to", type: entity_name, required: true}
@@ -27,13 +32,15 @@ taxonomy:
     issuer_max_validity_days: 1095
   BUILDING_COMPLETION:
     label: "Building Completion Certificate"
+    requires_regions: [stamp, signature]
+    retention_days: 2555
     keywords: ["completion certificate", "building plan"]
     fields:
       owner: {anchor: "Owner", type: entity_name, required: true}
       ref_no: {anchor: "Certificate No", type: string, required: true, pattern: "^BC/[A-Z]{2}/\\d{4}/\\d{4,6}$"}
       issued_on: {anchor: "Date of issue", type: date, required: true}
       issuer: {anchor: "Issuing authority", type: string}
-    verification: [ref_lookup]
+    verification: [pdf_sig, ref_lookup]
   FEE_RECEIPT:
     label: "Affiliation Fee Receipt"
     keywords: ["fee receipt", "amount received"]
@@ -60,6 +67,13 @@ rules:
     action: "Explain or correct the name difference"
 
 plausibility:
+  - id: DATE.valid_after_issue
+    code: DATE_IMPLAUSIBLE
+    kind: plausibility
+    applies_to: "*"
+    source_ref: "APH 2026-27 placeholder §2.1"
+    expr: {">": [{"var": "doc.valid_to"}, {"var": "doc.issued_on"}]}
+    expected: "Valid-to date after the issue date"
   - id: DATE.before_establishment
     code: DATE_IMPLAUSIBLE
     kind: plausibility
@@ -96,9 +110,14 @@ severity:
   HTR_LOW_CONFIDENCE: LOW
   EXTRACTION_LOW_CONFIDENCE: LOW
   INJECTION_INDICATOR: MEDIUM
+  REQUIRED_REGION_MISSING: MEDIUM
+  PDF_SIGNATURE_INVALID: HIGH
+  PDF_MODIFIED_AFTER_SIGNING: HIGH
+  ROOM_TYPE_MISMATCH: MEDIUM
+  MEDIA_NOT_ANALYSED: LOW
   CHECK_ERROR: MEDIUM
 
-institution_visible: [DOC_MISSING, DOC_EXPIRED, WRONG_DOC_TYPE, FIELD_MISSING, FORMAT_INVALID, NAME_MISMATCH, DATE_IMPLAUSIBLE]
+institution_visible: [REQUIRED_REGION_MISSING, DOC_MISSING, DOC_EXPIRED, WRONG_DOC_TYPE, FIELD_MISSING, FORMAT_INVALID, NAME_MISMATCH, DATE_IMPLAUSIBLE]
 
 risk_weights: {HIGH: 25, MEDIUM: 10, LOW: 3, INFO: 0}
 alerts:

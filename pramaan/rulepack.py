@@ -48,6 +48,8 @@ def parse(text):
     for code, s in sev.items():
         if s not in ("HIGH", "MEDIUM", "LOW", "INFO"):
             errs.append(f"severity.{code}: bad value {s}")
+    for r in p["rules"] + p.get("plausibility", []):
+        r.setdefault("source_ref", p.get("default_source_ref", "unspecified"))
     return (None if errs else p), errs
 
 

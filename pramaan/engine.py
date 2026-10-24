@@ -10,12 +10,13 @@ import httpx
 from bson import Binary
 from rapidfuzz import fuzz
 
-from . import extract, forensics, infra, rulepack, verify
+from . import extract, forensics, infra, providers, rulepack, verify
 from .audit import record as audit
 from .db import get_db, new_id, now
 from .security import hmac_sign
 
-MODE = os.environ.get("MODE", "LITE")
+MODE = providers.MODE
+VIDEO = (".mp4", ".mov")
 ADVISORY = "Preliminary indicator; requires official verification."
 
 
@@ -56,6 +57,10 @@ def process_doc(doc, pack, app):
             return None
 
     is_pdf = doc["filename"].lower().endswith(".pdf")
+    if doc["filename"].lower().endswith(VIDEO):
+        res.update(type=doc["slot"], type_conf=0, scanned=False, media="video")
+        res["stages"].append({"stage": "video", "ms": 0, "status": "skipped", "note": "frame sampling not available in this deployment"})
+        return res
     if is_pdf:
         pdf = stage("render", lambda: extract.open_pdf(data))
         if pdf is None:
@@ -77,10 +82,23 @@ def process_doc(doc, pack, app):
                 res["injection"] = hits
         else:
             res["type"], res["type_conf"] = None, 0
+            img0 = (extract.page_images(pdf, 0) or [extract.render_page(pdf, 0, 2)])[0]
+            o = stage("ocr_htr", lambda: read_scanned(img0, pack, doc["slot"], th))
+            if o:
+                res.update(o)
+                hits = extract.injection_hits(o.get("text", ""))
+                if hits:
+                    res["injection"] = hits
+        if not scanned:
+            res["regions"] = stage("regions", lambda: detect_regions(pdf, res.get("qr")))
+        if b"/ByteRange" in data or "pdf_sig" in (pack["taxonomy"].get(doc["slot"]) or {}).get("verification", []):
+            res["pdf_sig"] = stage("pdf_signature", lambda: verify.check_pdf_sig(data))
         if "qr" in (pack["taxonomy"].get(doc["slot"]) or {}).get("verification", []):
             res["qr"] = stage("qr", lambda: extract.read_qr(pdf))
         meta = pdf.get_metadata_dict()
         res["pdf_findings"] = stage("pdf_forensics", lambda: forensics.pdf_structure(data, meta)) or []
+        if (res.get("pdf_sig") or {}).get("status") == "VERIFIED":
+            res["pdf_findings"] = []  # the only later revision is the issuer's own signature
         imgs = [extract.render_page(pdf, i, 2) for i in range(len(pdf))] if scanned else []
         if scanned:
             emb = extract.page_images(pdf, 0)
@@ -111,24 +129,137 @@ def process_doc(doc, pack, app):
             fac = doc.get("facility")
             spec = (pack.get("infrastructure", {}).get("facilities", {}) or {}).get((fac or "").rsplit("_", 1)[0])
             if spec:
-                entry["count"] = stage("object_count", lambda: infra.count_objects(im, spec["count_object"]))
+                entry["count"] = stage("object_count", lambda: providers.detector.count(im, spec["count_object"]))
+                labels = spec.get("room_labels", []) + ["classroom", "library", "office", "corridor", "washroom"]
+                entry["room"] = stage("room_type", lambda: providers.scene.classify(im, labels))
+            entry["emb"] = providers.scene.embed(im) if providers.MODE == "FULL" else None
         res["images"].append(entry)
     if doc["slot"] != "INFRA_PHOTOS":
         res["htr_needed"] = bool(res.get("scanned"))
     return res
 
 
+def _deskew(img):
+    """Projection-profile deskew in +-3 degrees (scan pre-processing)."""
+    import numpy as np
+    g = img.convert("L").resize((img.width // 4, img.height // 4))
+    best, ang = -1, 0
+    for a in [x / 2 for x in range(-6, 7)]:
+        prof = (np.array(g.rotate(a, fillcolor=255)) < 128).sum(1).astype(float)
+        sc = float(np.var(prof))
+        if sc > best:
+            best, ang = sc, a
+    return img.rotate(ang, fillcolor="white", expand=False) if ang else img, ang
+
+
+def read_scanned(img, pack, slot, th):
+    """OCR Model on the page, Handwriting Model on field values the OCR Model reads poorly. None in LITE."""
+    img, angle = _deskew(img.convert("RGB"))
+    lines = providers.ocr.read(img)
+    if lines is None:
+        return None
+    text = "\n".join(l["text"] for l in lines)
+    t, conf = extract.classify(text, pack["taxonomy"])
+    spec = pack["taxonomy"].get(slot) or {}
+    fields, htr = {}, []
+    W, H = img.size
+    for fname, fs in (spec.get("fields") or {}).items():
+        ln = next((l for l in lines if fs["anchor"].lower() in l["text"].lower()), None)
+        if not ln:
+            continue
+        raw = re.split(re.escape(fs["anchor"]) + r"\s*:?", ln["text"], flags=re.I)[-1].strip()
+        c = ln["conf"]
+        ax = next((w for w in ln["words"] if fs["anchor"].split()[-1].lower().strip(":") in w["text"].lower()), None)
+        x0 = (ax["bbox"][0] + ax["bbox"][2]) if ax else ln["bbox"][0] + ln["bbox"][2] / 3
+        band = [x0, max(0, ln["bbox"][1] - 0.006), min(1 - x0, 0.6), ln["bbox"][3] + 0.012]
+        if not raw or c < th.get("ocr_min_conf", 0.8):
+            crop = img.crop((int(band[0] * W), int(band[1] * H), int((band[0] + band[2]) * W), int((band[1] + band[3]) * H)))
+            h = providers.htr.read(crop)
+            if h:
+                raw, c = h["text"], h["conf"]
+                htr.append({"field": fname, "text": raw, "conf": c, "bbox": band})
+        val = extract.norm_date(raw) if fs.get("type") == "date" else extract.norm_number(raw) if fs.get("type") == "number" else raw
+        fields[fname] = {"value": val, "raw": raw, "page": 0, "bbox": band, "conf": round(c if val is not None else min(c, 0.4), 3)}
+    return {"fields": fields, "htr": htr, "ocr_lines": len(lines), "text": text, "type": t, "type_conf": conf,
+            "deskew_deg": angle, "ocr_used": True}
+
+
+def detect_regions(pdf, qr=None):
+    """Stamp/seal (coloured ink) and signature (ink strokes outside the text layer) presence with boxes."""
+    import numpy as np
+    page = pdf[0]
+    img = extract.render_page(pdf, 0, 2)
+    a = np.asarray(img, dtype=np.int16)
+    r, g, b = a[..., 0], a[..., 1], a[..., 2]
+    W, H = img.size
+    out = {}
+    ink = ((b - r > 50) & (b > 100)) | ((r - b > 60) & (r > 120) & (g < 120))
+    ink[: int(H * 0.12)] = False  # letterhead band is printed colour, not a stamp
+
+    def box(ys, xs):
+        return [round(float(xs.min()) / W, 4), round(float(ys.min()) / H, 4), round(float(xs.max() - xs.min()) / W, 4), round(float(ys.max() - ys.min()) / H, 4)]
+    if ink.sum() > 0.0008 * W * H:
+        out["stamp"] = box(*np.nonzero(ink))
+    dark = (a.max(axis=2) < 150)
+    dark[: int(H * 0.12)] = False  # header band
+    tp = page.get_textpage()
+    pw, ph = page.get_size()
+    for i in range(tp.count_chars()):
+        l, bb, rr, t = tp.get_charbox(i)
+        dark[max(0, int((ph - t) * H / ph) - 2): int((ph - bb) * H / ph) + 2, max(0, int(l * W / pw) - 2): int(rr * W / pw) + 2] = False
+    if qr:
+        x, y, w, h = qr["bbox"]
+        dark[int(y * H) - 4: int((y + h) * H) + 4, int(x * W) - 4: int((x + w) * W) + 4] = False
+    if "stamp" in out:
+        x, y, w, h = out["stamp"]
+        dark[int(y * H): int((y + h) * H), int(x * W): int((x + w) * W)] = False
+    if dark.sum() > 0.00015 * W * H:
+        out["signature"] = box(*np.nonzero(dark))
+    return out
+
+
+def doc_stage(d, pack, app, ref, route=None, trace=None):
+    """Per-document tools in order: process, then verification routes. `route` lets the Verification Agent pick methods."""
+    db = get_db()
+    app_id = app["id"]
+    r = process_doc(d, pack, app)
+    tax = pack["taxonomy"].get(d["slot"], {})
+    methods = route(r) if callable(route) else route if route is not None else tax.get("verification", [])
+    vids = []
+    cf = None if r.get("scanned") and not r.get("ocr_used") else verify.carry_forward(d, app)
+    if cf:
+        vids.append(cf["id"])
+    else:
+        if "pdf_sig" in methods and r.get("pdf_sig"):
+            vids.append(verify.record_pdf_sig(d["id"], app_id, r["pdf_sig"])["id"])
+        if "qr" in methods:
+            if r.get("qr"):
+                vids.append(verify.verify_qr(d["id"], app_id, r["qr"], r["fields"])["id"])
+            elif not r.get("scanned"):
+                vids.append(verify._record(d["id"], app_id, "qr", None, "MANUAL_REVIEW", {"reason": "No QR code found on the document"})["id"])
+        if "ref_lookup" in methods and (not r.get("scanned") or r.get("ocr_used")):
+            v = verify.verify_ref(d["id"], app_id, d["slot"], r["fields"], retries=1 if route is not None else 0)
+            vids.append(v["id"])
+            if trace and v["status"] == "SOURCE_UNAVAILABLE":
+                trace("Verification Agent", "issuer_lookup", {"doc": d["id"]}, "source unavailable after retry; routed to manual confirmation")
+    r["verification_ids"] = vids
+    db.documents.update_one({"id": d["id"]}, {"$set": {"result": r, "pack_ref": ref}})
+    d["result"] = r
+    return r
+
+
 # ---------- flag factory
 class Flags:
     def __init__(self, pack, pack_ref, app_id):
         self.pack, self.ref, self.app_id, self.items = pack, pack_ref, app_id, []
+        self.src = {r["id"]: r.get("source_ref") for r in pack["rules"] + pack.get("plausibility", [])}
 
     def add(self, code, category, title, reason, evidence, rule_id=None, doc_id=None, key=None, expected=None,
             observed=None, action=None, conf=0.95, detector="rules-engine"):
         sev = self.pack["severity"].get(code, "MEDIUM")
         ev = list(evidence)
         if rule_id:
-            ev.append({"type": "rule", "rule_id": rule_id, "pack": self.ref})
+            ev.append({"type": "rule", "rule_id": rule_id, "pack": self.ref, "source_ref": self.src.get(rule_id, self.pack.get("default_source_ref"))})
         self.items.append({
             "code": code, "category": category, "severity": sev, "title": title, "reason": reason, "evidence": ev,
             "expected": expected, "observed": observed, "detector": detector, "detector_version": forensics.VERSION,
@@ -149,7 +280,11 @@ def _fe(doc, fname, f):
 
 
 # ---------- application-level validation
-def run(app_id, changed=None, actor="system", pack_override=None, dry=False):
+def use_agents():
+    return os.environ.get("AGENTS", "auto") == "on" or (os.environ.get("AGENTS", "auto") == "auto" and MODE == "FULL")
+
+
+def run(app_id, changed=None, actor="system", pack_override=None, dry=False, agents_on=None):
     db = get_db()
     t0 = time.perf_counter()
     app = db.applications.find_one({"id": app_id})
@@ -162,23 +297,21 @@ def run(app_id, changed=None, actor="system", pack_override=None, dry=False):
     timeline.append({"stage": "records_fetch", "status": "ok" if rec else "missing", "ms": 0})
 
     # B: per-document stages, reusing cached results for unchanged documents
+    agent = None
+    if not dry and (use_agents() if agents_on is None else agents_on):
+        from . import agents
+        agent = agents.Run(app, pack, ref, timeline)
     for d in docs:
         if d.get("result") and (dry or ((changed is None or d["id"] not in changed) and d.get("pack_ref") == ref)):
             timeline.append({"stage": f"doc:{d['slot']}", "status": "reused", "doc_id": d["id"], "ms": 0})
             continue
         t = time.perf_counter()
-        r = process_doc(d, pack, app)
-        tax = pack["taxonomy"].get(d["slot"], {})
-        vids = []
-        if r.get("qr"):
-            vids.append(verify.verify_qr(d["id"], app_id, r["qr"], r["fields"])["id"])
-        elif "qr" in tax.get("verification", []) and not r.get("scanned"):
-            vids.append(verify._record(d["id"], app_id, "qr", None, "MANUAL_REVIEW", {"reason": "No QR code found on the document"})["id"])
-        if "ref_lookup" in tax.get("verification", []) and not r.get("scanned"):
-            vids.append(verify.verify_ref(d["id"], app_id, d["slot"], r["fields"])["id"])
-        r["verification_ids"] = vids
-        db.documents.update_one({"id": d["id"]}, {"$set": {"result": r, "pack_ref": ref}})
-        d["result"] = r
+        try:
+            r = agent.process(d) if agent else doc_stage(d, pack, app, ref)
+        except Exception as e:  # any agent failure: deterministic pipeline completes the stage
+            timeline.append({"stage": "agent_fallback", "status": "error", "note": f"{type(e).__name__}: {str(e)[:120]} -> DAG"})
+            agent = None
+            r = doc_stage(d, pack, app, ref)
         timeline.append({"stage": f"doc:{d['slot']}", "status": "ran", "doc_id": d["id"],
                          "ms": round((time.perf_counter() - t) * 1000), "substages": r["stages"]})
 
@@ -222,13 +355,32 @@ def run(app_id, changed=None, actor="system", pack_override=None, dry=False):
             d = ds[0]
             r = d["result"]
             spec = pack["taxonomy"].get(s, {})
-            if r.get("scanned"):
+            if r.get("media") == "video":
+                F.add("MEDIA_NOT_ANALYSED", "EXTRACTION", f"{spec.get('label', s)}: video not analysed automatically",
+                      "Frame sampling is not available in this deployment. An officer should view the video.",
+                      [{"type": "metadata", "document_id": d["id"], "key": "file", "value": d["filename"]}], doc_id=d["id"], conf=0.0)
+                continue
+            if r.get("ocr_used"):
+                for fname, f in r.get("fields", {}).items():
+                    if f.get("conf", 1) < pack["thresholds"].get("htr_min_conf", 0.7):
+                        F.add("HTR_LOW_CONFIDENCE", "EXTRACTION", f"{spec.get('label', s)}: '{fname.replace('_', ' ')}' read with low confidence",
+                              f"Read as '{f.get('raw')}' with confidence {f.get('conf')} (threshold {pack['thresholds'].get('htr_min_conf')}). Routed to manual review.",
+                              [_fe(d, fname, f)], doc_id=d["id"], key=fname, expected=f">= {pack['thresholds'].get('htr_min_conf')}",
+                              observed=f.get("conf"), conf=f.get("conf"), action="Officer to read this field", detector="Handwriting Model")
+            elif r.get("scanned"):
                 F.add("HTR_LOW_CONFIDENCE", "EXTRACTION", f"{spec.get('label', s)}: scanned or handwritten, not machine-readable",
                       "No text layer. Handwriting Model is not available in LITE mode, so fields could not be read with confidence. Routed to manual review.",
                       [{"type": "region", "document_id": d["id"], "page": 0, "bbox": [0, 0, 1, 1]}], doc_id=d["id"],
                       expected=f"confidence >= {pack['thresholds'].get('htr_min_conf')}", observed="0.0", conf=0.0,
                       action="Officer to read the document", detector="Handwriting Model")
                 continue
+            for reg in (spec.get("requires_regions") or []) if "regions" in r else []:
+                if reg not in (r.get("regions") or {}):
+                    F.add("REQUIRED_REGION_MISSING", "COMPLETENESS", f"{spec.get('label', s)}: no {reg} found",
+                          f"The rule pack requires a {reg} on this document type and none was detected.",
+                          [{"type": "region", "document_id": d["id"], "page": 0, "bbox": [0, 0, 1, 1]}], doc_id=d["id"], key=reg,
+                          expected=f"{reg} present", observed="not detected", action=f"Upload a copy that shows the issuer's {reg}",
+                          conf=0.7, detector="Region detector")
             if s != "INFRA_PHOTOS" and r.get("type") and r["type"] != s:
                 F.add("WRONG_DOC_TYPE", "COMPLETENESS", f"Wrong document in slot {spec.get('label', s)}",
                       f"Document looks like {pack['taxonomy'][r['type']]['label']} (score {r['type_conf']}).",
@@ -375,12 +527,27 @@ def run(app_id, changed=None, actor="system", pack_override=None, dry=False):
                               "Counted once.", [{"type": "duplicate", "document_id": d["id"], "other_document_id": od}],
                               doc_id=d["id"], key=od, detector="Duplicate detector (pHash)")
                 seen[f"{d['id']}:{h}"] = (d["id"], h)
+                if im.get("emb"):
+                    import numpy as np
+                    cos_th = pack["thresholds"].get("duplicate_embed_cos", 0.95)
+                    for o in db.documents.find({"app_id": {"$ne": app_id}, "superseded": {"$ne": True}, "result.images.emb": {"$ne": None}},
+                                               {"id": 1, "app_id": 1, "result.images.emb": 1}):
+                        for oi in o["result"]["images"]:
+                            if oi.get("emb") and app_inst.get(o["app_id"]) != app["institution_id"]:
+                                cos = float(np.dot(im["emb"], oi["emb"]))
+                                if cos >= cos_th:
+                                    F.add("DUPLICATE_ACROSS_INSTITUTIONS", "ANOMALY", "Image matches a document from another institution",
+                                          f"Image-embedding similarity {cos:.3f} >= {cos_th}.",
+                                          [{"type": "duplicate", "document_id": d["id"], "other_document_id": o["id"],
+                                            "other_application_id": o["app_id"], "similarity": round(cos, 3)}],
+                                          doc_id=d["id"], key=o["id"], conf=round(cos, 3), detector="Duplicate detector (image embeddings)")
     check("duplicates", c_dupes)
 
     # B12 verification flags
     vmap = {("qr", "MISMATCH"): "QR_MISMATCH", ("qr", "SIGNATURE_INVALID"): "QR_SIGNATURE_INVALID",
             ("ref_lookup", "MISMATCH"): "REF_MISMATCH", ("ref_lookup", "NOT_FOUND"): "REF_NOT_FOUND",
-            ("ref_lookup", "SOURCE_UNAVAILABLE"): "VERIFICATION_SOURCE_UNAVAILABLE"}
+            ("ref_lookup", "SOURCE_UNAVAILABLE"): "VERIFICATION_SOURCE_UNAVAILABLE",
+            ("pdf_sig", "SIGNATURE_INVALID"): "PDF_SIGNATURE_INVALID", ("pdf_sig", "MODIFIED_AFTER_SIGNING"): "PDF_MODIFIED_AFTER_SIGNING"}
     vids = [v for d in docs for v in d["result"].get("verification_ids", [])]
     vers = list(db.verifications.find({"id": {"$in": vids}}))
 
@@ -418,6 +585,13 @@ def run(app_id, changed=None, actor="system", pack_override=None, dry=False):
                             continue
                         hashes.append(im["hash"])
                         counted += (im.get("count") or {}).get("count", 0)
+                    for p in ph:
+                        room = p["result"]["images"][0].get("room") if p["result"].get("images") else None
+                        if room and room["conf"] >= 0.5 and room["label"] not in spec.get("room_labels", []):
+                            F.add("ROOM_TYPE_MISMATCH", "INFRASTRUCTURE", f"{fac['id']}: photo looks like a {room['label']}",
+                                  f"Scene Classifier: '{room['label']}' ({room['conf']}), expected one of {spec.get('room_labels')}.",
+                                  [{"type": "region", "document_id": p["id"], "page": 0, "bbox": [0, 0, 1, 1]}], rule_id=rule["id"],
+                                  doc_id=p["id"], key="room", conf=room["conf"], detector="Scene Classifier", action="Provide a photo of the claimed facility")
                     if claimed and counted < claimed * (1 - spec.get("tolerance_pct", 15) / 100):
                         F.add(rule["code"], "INFRASTRUCTURE", f"{fac['id']}: {spec['count_object']}s {counted} detected / {claimed} claimed",
                               f"Detected count is below claim minus {spec.get('tolerance_pct')}% tolerance. Advisory only.",
@@ -471,17 +645,25 @@ def run(app_id, changed=None, actor="system", pack_override=None, dry=False):
     counts = {s: sum(1 for f in open_f if f["severity"] == s) for s in ("HIGH", "MEDIUM", "LOW")}
     vstat = {"verified": sum(1 for v in vers if v["status"] == "VERIFIED"), "total": len(vers)}
     diff = records_diff(a, rec, ctx)
-    summary = case_summary(out, pack)
+    summary = None
+    if agent:
+        try:
+            summary = agent.summarize(out)
+        except Exception as e:
+            timeline.append({"stage": "case_writer", "status": "error", "note": f"{str(e)[:100]} -> template"})
+    summary = summary or case_summary(out, pack)
     elapsed = round((time.perf_counter() - t0) * 1000)
     rep = {"id": new_id("RPT"), "app_id": app_id, "version": version, "created": now().isoformat(), "mode": MODE, "pack": ref,
            "flag_ids": [f["id"] for f in out], "resolved_flag_ids": resolved, "timeline": timeline, "records_diff": diff,
            "summary": summary, "risk": risk, "counts": counts, "verification": vstat, "elapsed_ms": elapsed,
-           "changed": changed}
+           "changed": changed, "agents": bool(agent), "providers": providers.status()}
     db.reports.insert_one(dict(rep))
     status = "READY_FOR_REVIEW"
     db.applications.update_one({"id": app_id}, {"$set": {"report_version": version, "risk": risk, "counts": counts,
                                                          "verification": vstat, "status": status, "validated_at": now().isoformat(),
                                                          "elapsed_ms": elapsed}})
+    if agent:
+        agent.save_traces(rep["id"])
     raise_alerts(app, pack, out)
     audit(actor, "validation.run", app_id, {"version": version, "flags": len(out), "risk": risk, "changed": changed})
     send_webhook(app, "validation.updated" if version > 1 else "validation.completed", version)
@@ -534,16 +716,40 @@ def raise_alerts(app, pack, flags):
                                   "channel": ["in-app", "webhook"], "flag_ids": [f["id"] for f in hit],
                                   "created": now().isoformat(), "condition_at": cond_at.isoformat(),
                                   "due": (cond_at + timedelta(days=2)).isoformat(), "institution": app["form"].get("institution_name")})
+            notify_alert(app, rule["type"], sev, [f["title"] for f in hit])
 
 
-def send_webhook(app, event, version):
+def notify_alert(app, kind, sev, titles):
+    """Email via SMTP_HOST when configured (e.g. Mailpit), otherwise kept in the outbox collection; plus host webhook."""
+    db = get_db()
+    msg = {"id": new_id("MAIL"), "ts": now().isoformat(), "to": "scrutiny-officers@pramaan.local", "app_id": app["id"],
+           "subject": f"[PRAMAAN] {sev} {kind}: {app['form'].get('institution_name')}", "body": "\n".join(titles), "channel": "outbox"}
+    host = os.environ.get("SMTP_HOST")
+    if host:
+        try:
+            import smtplib
+            from email.message import EmailMessage
+            em = EmailMessage()
+            em["From"], em["To"], em["Subject"] = "pramaan@pramaan.local", msg["to"], msg["subject"]
+            em.set_content(msg["body"])
+            with smtplib.SMTP(host, int(os.environ.get("SMTP_PORT", "1025")), timeout=5) as sm:
+                sm.send_message(em)
+            msg["channel"] = "smtp"
+        except Exception as e:
+            msg["error"] = str(e)[:120]
+    db.outbox.insert_one(msg)
+    send_webhook(app, "alert.raised", app.get("report_version", 0), extra={"alert": kind, "severity": sev})
+
+
+def send_webhook(app, event, version, extra=None):
     db = get_db()
     host = db.hosts.find_one({"id": app["host_id"]})
     if not host or not host.get("webhook_url"):
         return
     body = json.dumps({"event": event, "external_ref": app.get("external_ref"), "application_id": app["id"],
-                       "report_version": version, "ts": now().isoformat()}).encode()
-    sig = hmac_sign(host["webhook_secret"], body)
+                       "report_version": version, "ts": now().isoformat(), **(extra or {})}).encode()
+    stamp = str(int(time.time()))
+    sig = hmac_sign(host["webhook_secret"], stamp.encode() + b"." + body)
     entry = {"id": new_id("WH"), "host_id": host["id"], "event": event, "app_id": app["id"], "ts": now().isoformat()}
     url = host["webhook_url"]
     if url.startswith("/"):
@@ -551,7 +757,8 @@ def send_webhook(app, event, version):
         url = os.environ.get("PUBLIC_URL", f"https://{prod}" if prod else "http://127.0.0.1:8010") + url
     for attempt in range(2):
         try:
-            r = httpx.post(url, content=body, headers={"X-Pramaan-Signature": sig, "Content-Type": "application/json"},
+            r = httpx.post(url, content=body, headers={"X-Pramaan-Signature": sig, "X-Pramaan-Timestamp": stamp,
+                                                       "X-Pramaan-Delivery": entry["id"], "Content-Type": "application/json"},
                            timeout=httpx.Timeout(6, connect=2))
             entry.update(status=r.status_code, attempts=attempt + 1)
             if r.status_code < 500:

@@ -11,8 +11,8 @@ from fastapi.responses import JSONResponse
 
 from . import audit, engine, extract, rulepack
 from .db import clean, get_db, new_id, now
-from .security import (can, check_password, check_upload, current_user, hash_password, hmac_ok, make_token,
-                       rate_limit, require)
+from .security import (can, check_password, check_upload, current_user, decode, decrypt, encrypt, hash_password, hmac_ok,
+                       issue_session, make_token, rate_limit, require)
 
 app = FastAPI(title="PRAMAAN", docs_url="/api/docs", openapi_url="/api/openapi.json")
 DEMO = os.environ.get("DEMO", "true") == "true"
@@ -45,7 +45,8 @@ def health():
         dbs = "ok"
     except Exception as e:
         dbs = f"error: {str(e)[:80]}"
-    return {"db": dbs, "mode": engine.MODE, "providers": extract.PROVIDERS,
+    from . import providers
+    return {"db": dbs, "mode": engine.MODE, "providers": providers.status(), "agents": engine.use_agents(),
             "object_detector": "vision model" if os.environ.get("GROQ_KEY") else "classical counter (LITE)",
             "store": "atlas" if os.environ.get("MONGODB_URI") else "in-memory"}
 
@@ -70,9 +71,15 @@ def login(response: Response, request: Request, body: dict = Body(...)):
             get_db().users.update_one({"username": u["username"]}, {"$set": upd})
         audit.record(body.get("username", "?"), "auth.login_failed", "user")
         raise HTTPException(401, "Wrong username or password")
+    if u.get("mfa_secret_enc"):
+        import pyotp
+        if not body.get("totp"):
+            raise HTTPException(401, "totp_required")
+        if not pyotp.TOTP(decrypt(u["mfa_secret_enc"])).verify(str(body["totp"]), valid_window=1):
+            audit.record(u["username"], "auth.totp_failed", "user")
+            raise HTTPException(401, "Wrong authenticator code")
     get_db().users.update_one({"username": u["username"]}, {"$set": {"fails": 0}})
-    tok = make_token(u)
-    response.set_cookie("pramaan_session", tok, httponly=True, samesite="lax", secure=os.environ.get("VERCEL") == "1", max_age=8 * 3600)
+    issue_session(response, u)
     audit.record(u["username"], "auth.login", "user")
     return {"username": u["username"], "role": u["role"], "name": u["name"], "region": u["region"]}
 
@@ -85,14 +92,57 @@ def demo_login(response: Response, body: dict = Body(...)):
     u = get_db().users.find_one({"username": body.get("username", "")})
     if not u:
         raise HTTPException(404, "Unknown demo user")
-    response.set_cookie("pramaan_session", make_token(u), httponly=True, samesite="lax", secure=os.environ.get("VERCEL") == "1", max_age=8 * 3600)
+    issue_session(response, u)
     audit.record(u["username"], "auth.demo_login", "user")
     return {"username": u["username"], "role": u["role"]}
+
+
+@app.post("/api/auth/refresh")
+def refresh(request: Request, response: Response):
+    """Rotating refresh: each refresh token works once; reuse revokes the user's whole refresh family."""
+    import jwt as _jwt
+    tok = request.cookies.get("pramaan_refresh")
+    try:
+        c = decode(tok or "")
+    except _jwt.PyJWTError:
+        raise HTTPException(401, "Refresh expired")
+    db = get_db()
+    row = db.refresh_tokens.find_one({"jti": c.get("jti")})
+    if c.get("typ") != "refresh" or not row:
+        raise HTTPException(401, "Invalid refresh")
+    if row["used"]:
+        db.refresh_tokens.update_many({"user": row["user"]}, {"$set": {"used": True}})
+        audit.record(row["user"], "auth.refresh_reuse", "user")
+        raise HTTPException(401, "Refresh token reused")
+    db.refresh_tokens.update_one({"jti": row["jti"]}, {"$set": {"used": True}})
+    issue_session(response, db.users.find_one({"username": row["user"]}))
+    return {"ok": True}
+
+
+@app.post("/api/auth/totp/setup")
+def totp_setup(user=Depends(current_user)):
+    import pyotp
+    secret = pyotp.random_base32()
+    get_db().users.update_one({"username": user["sub"]}, {"$set": {"mfa_pending_enc": encrypt(secret)}})
+    return {"secret": secret, "uri": pyotp.TOTP(secret).provisioning_uri(user["sub"], issuer_name="PRAMAAN (demo)")}
+
+
+@app.post("/api/auth/totp/enable")
+def totp_enable(body: dict = Body(...), user=Depends(current_user)):
+    import pyotp
+    u = get_db().users.find_one({"username": user["sub"]})
+    sec = decrypt(u.get("mfa_pending_enc"))
+    if not sec or not pyotp.TOTP(sec).verify(str(body.get("code", "")), valid_window=1):
+        raise HTTPException(400, "Code did not match")
+    get_db().users.update_one({"username": user["sub"]}, {"$set": {"mfa_secret_enc": encrypt(sec)}, "$unset": {"mfa_pending_enc": ""}})
+    audit.record(user["sub"], "auth.totp_enabled", "user")
+    return {"ok": True}
 
 
 @app.post("/api/auth/logout")
 def logout(response: Response):
     response.delete_cookie("pramaan_session")
+    response.delete_cookie("pramaan_refresh", path="/api/auth")
     return {"ok": True}
 
 
@@ -107,6 +157,7 @@ def host_from_key(key):
     from .security import check_password as chk
     for h in get_db().hosts.find():
         if key and key.startswith(h["key_prefix"]) and chk(h["api_key_hash"], key):
+            rate_limit("key:" + h["key_prefix"], 300, 60)
             return h
     raise HTTPException(401, "Invalid API key")
 
@@ -120,20 +171,39 @@ def create_app_for_host(h, body):
     form.setdefault("institution_name", rec["name"])
     form.setdefault("society_name", rec["society_name"])
     form.setdefault("facilities", [])
-    app_id = create_application(h["id"], body.get("external_ref") or new_id("REF"), rec["aicte_id"], h["category"], form, h["pack_key"], rec["region"])
+    pack, _ = engine.active_pack(h["pack_key"])
+    cat = body.get("category")
+    if cat and cat not in pack["categories"]:
+        raise HTTPException(400, f"Unknown category {cat}; this host accepts {list(pack['categories'])}")
+    cat = cat or (h["category"] if h["category"] in pack["categories"] else next(iter(pack["categories"])))
+    app_id = create_application(h["id"], body.get("external_ref") or new_id("REF"), rec["aicte_id"], cat, form, h["pack_key"], rec["region"])
     return app_id
+
+
+def idempotent(key, scope, fn):
+    """Same Idempotency-Key in the same scope returns the first response instead of repeating the action."""
+    if not key:
+        return fn()
+    db = get_db()
+    hit = db.idempotency.find_one({"_id": f"{scope}:{key}"})
+    if hit:
+        return hit["response"]
+    out = fn()
+    db.idempotency.insert_one({"_id": f"{scope}:{key}", "response": out, "ts": now().isoformat()})
+    return out
 
 
 def new_session(app_id):
     tok = secrets.token_urlsafe(24)
-    get_db().upload_sessions.insert_one({"token": tok, "app_id": app_id, "expires": (now() + timedelta(hours=6)).isoformat()})
+    get_db().upload_sessions.insert_one({"token": tok, "app_id": app_id, "scope": "widget:*",
+                                         "expires": (now() + timedelta(minutes=int(os.environ.get("SESSION_TTL_MIN", "30")))).isoformat()})
     return tok
 
 
 @app.post("/api/v1/applications", status_code=201)
-def api_create(body: dict = Body(...), x_api_key: str = Header(None)):
+def api_create(body: dict = Body(...), x_api_key: str = Header(None), idempotency_key: str = Header(None)):
     h = host_from_key(x_api_key)
-    return {"application_id": create_app_for_host(h, body)}
+    return idempotent(idempotency_key, h["id"], lambda: {"application_id": create_app_for_host(h, body)})
 
 
 @app.post("/api/v1/applications/{app_id}/upload-sessions", status_code=201)
@@ -232,8 +302,14 @@ async def w_upload(slot: str = Form(...), file: UploadFile = File(...), facility
 
 
 @app.post("/api/widget/submit", status_code=202)
-def w_submit(x_session: str = Header(None)):
+def w_submit(x_session: str = Header(None), idempotency_key: str = Header(None)):
     a = session_app(x_session)
+    if idempotency_key:
+        return idempotent(idempotency_key, a["id"], lambda: _submit(a))
+    return _submit(a)
+
+
+def _submit(a):
     get_db().applications.update_one({"id": a["id"]}, {"$set": {"status": "SUBMITTED", "submitted_on": now().date().isoformat(),
                                                                "submitted_at": now().isoformat()}})
     audit.record("institution", "application.submit", a["id"])
@@ -281,9 +357,17 @@ def mh_inst(h: str):
 async def mh_webhook(h: str, request: Request):
     host = mock_host(h)
     body = await request.body()
-    ok = hmac_ok(host["webhook_secret"], body, request.headers.get("X-Pramaan-Signature"))
+    stamp = request.headers.get("X-Pramaan-Timestamp", "")
+    ok = hmac_ok(host["webhook_secret"], stamp.encode() + b"." + body, request.headers.get("X-Pramaan-Signature"))
     if not ok:
         raise HTTPException(401, "Bad signature")
+    import time as _t
+    if not stamp.isdigit() or abs(_t.time() - int(stamp)) > 300:
+        raise HTTPException(401, "Stale timestamp")
+    delivery = request.headers.get("X-Pramaan-Delivery", "")
+    if get_db().mock_host_seen.find_one({"_id": delivery}):
+        raise HTTPException(409, "Replay")
+    get_db().mock_host_seen.insert_one({"_id": delivery})
     get_db().mock_host_inbox.insert_one({"host": h, "ts": now().isoformat(), "payload": json.loads(body), "signature_ok": ok})
     return {"ok": True}
 
@@ -310,8 +394,17 @@ def sla(a, pack_days=10):
 
 
 @app.get("/api/queue")
-def queue(user=Depends(require("view_queue"))):
-    apps = list(get_db().applications.find(scoped(user)).sort("risk", -1))
+def queue(user=Depends(require("view_queue")), region: str = None, category: str = None, status: str = None,
+          flag: str = None, min_age_days: int = None, host: str = None):
+    q = {}
+    for k, v in (("region", region), ("category", category), ("status", status), ("host_id", host)):
+        if v:
+            q[k] = v
+    if flag:
+        q["id"] = {"$in": get_db().flags.distinct("app_id", {"code": flag, "current": True})}
+    apps = list(get_db().applications.find(scoped(user, q)).sort("risk", -1))
+    if min_age_days is not None:
+        apps = [a for a in apps if (sla(a) or {}).get("age_days", 0) >= min_age_days]
     hosts = {h["id"]: h["name"] for h in get_db().hosts.find()}
     return [{"id": a["id"], "institution": a["form"]["institution_name"], "institution_id": a["institution_id"], "category": a["category"],
              "host": hosts.get(a["host_id"]), "region": a["region"], "submitted": a.get("submitted_on"), "risk": a.get("risk", 0),
@@ -359,7 +452,8 @@ def app_detail(app_id: str, user=Depends(require("view_queue"))):
             "records": rec, "host": host["name"], "pack": f"{pack['key']}@{ver}",
             "taxonomy": {k: v["label"] for k, v in pack["taxonomy"].items()},
             "required_slots": pack["categories"][a["category"]]["required_slots"],
-            "institution_view": deficiencies(a)}
+            "institution_view": deficiencies(a),
+            "traces": [clean(t) for t in db.agent_traces.find({"app_id": app_id, "report_id": (rep or {}).get("id")}).sort("ts", 1).limit(200)]}
 
 
 @app.get("/api/blobs/{bid}")
@@ -630,3 +724,86 @@ def tamper(x_seed_token: str = Header(None)):
     e = get_db().audit_log.find_one({"seq": 3})
     get_db().audit_log.update_one({"seq": 3}, {"$set": {"actor": e["actor"] + "-edited"}})
     return {"tampered_seq": 3}
+
+
+# ---------------- reports (FR-REP-01/02): HTML and PDF, full or institution view
+def report_data(user, app_id, view):
+    d = app_detail(app_id, user)
+    if view == "institution":
+        return {"title": "Rectification list", "app": d["application"], "pack": d["pack"], "host": d["host"],
+                "items": d["institution_view"]["items"], "pending": d["institution_view"]["pending_authority_verification"]}
+    return {"title": "Validation report", **d}
+
+
+@app.get("/api/applications/{app_id}/report.html")
+def report_html(app_id: str, view: str = "full", user=Depends(require("view_queue"))):
+    from .reports import render_html
+    return Response(render_html(report_data(user, app_id, view), view), media_type="text/html")
+
+
+@app.get("/api/applications/{app_id}/report.pdf")
+def report_pdf(app_id: str, view: str = "full", user=Depends(require("view_queue"))):
+    from .reports import render_pdf
+    return Response(render_pdf(report_data(user, app_id, view), view), media_type="application/pdf",
+                    headers={"Content-Disposition": f"inline; filename={app_id}-{view}.pdf"})
+
+
+@app.get("/api/applications/{app_id}/traces")
+def traces(app_id: str, user=Depends(require("view_queue"))):
+    get_app(user, app_id)
+    return [clean(t) for t in get_db().agent_traces.find({"app_id": app_id}).sort("ts", 1).limit(400)]
+
+
+@app.get("/api/outbox")
+def outbox(user=Depends(require("view_queue"))):
+    return [clean(m) for m in get_db().outbox.find().sort("ts", -1).limit(100)]
+
+
+@app.get("/api/overrides/export")
+def overrides(user=Depends(require("audit"))):
+    """FR-HIL-04: officer dispositions as a feedback dataset for threshold tuning."""
+    b = io.StringIO()
+    w = csv.writer(b)
+    w.writerow(["flag_id", "code", "severity", "detector", "confidence", "action", "by", "reason", "ts"])
+    for f in get_db().flags.find({"current": True, "disposition": {"$ne": None}}):
+        dp = f["disposition"]
+        w.writerow([f["id"], f["code"], f["severity"], f["detector"], f["confidence"], dp["action"], dp["by"], dp["reason"], dp["ts"]])
+    return Response(b.getvalue(), media_type="text/csv", headers={"Content-Disposition": "attachment; filename=overrides.csv"})
+
+
+@app.put("/api/issuers/{iid}")
+def issuer_toggle(iid: str, body: dict = Body(...), user=Depends(require("manage_hosts"))):
+    """FR-VER-06: simulate issuer latency, downtime and forced mismatches for the demo."""
+    upd = {k: body[k] for k in ("down", "force_mismatch", "latency_ms") if k in body}
+    get_db().issuers.update_one({"id": iid}, {"$set": upd})
+    audit.record(user["sub"], "issuer.toggle", iid, upd)
+    return {"ok": True}
+
+
+@app.get("/api/issuers")
+def issuers(user=Depends(require("manage_hosts"))):
+    return [{k: v for k, v in clean(i).items() if k != "public_key"} for i in get_db().issuers.find()]
+
+
+@app.post("/api/applications/{app_id}/legal-hold")
+def legal_hold(app_id: str, body: dict = Body(...), user=Depends(require("decision_note"))):
+    get_db().applications.update_one({"id": app_id}, {"$set": {"legal_hold": bool(body.get("hold"))}})
+    audit.record(user["sub"], "application.legal_hold", app_id, {"hold": bool(body.get("hold"))})
+    return {"ok": True}
+
+
+def cron_ok(request: Request, x_seed_token):
+    """Vercel Cron sends CRON_SECRET as a bearer token; the seed token also works for manual runs."""
+    want = os.environ.get("CRON_SECRET")
+    auth = request.headers.get("authorization", "")
+    if want and secrets.compare_digest(auth, f"Bearer {want}"):
+        return
+    seed_ok(x_seed_token)
+
+
+@app.get("/api/cron/daily")
+def cron_daily(request: Request, x_seed_token: str = Header(None)):
+    """Nightly jobs: SLA alerts, retention purge, audit anchor."""
+    cron_ok(request, x_seed_token)
+    from .jobs import anchor_audit, retention_purge, sla_alerts
+    return {"sla": sla_alerts(), "retention": retention_purge(), "anchor": anchor_audit()}

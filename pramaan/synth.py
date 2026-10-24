@@ -83,7 +83,7 @@ def _font(size, hand=False):
     return ImageFont.load_default(size)
 
 
-def scanned_affidavit(lines_printed, hand_fields, tamper=None, seed=1):
+def scanned_affidavit(lines_printed, hand_fields, tamper=None, seed=1, damage=True):
     """A noisy 'scan' with handwritten fills. tamper=(field_index, new_text) pastes a clean patch over a value."""
     rnd = random.Random(seed)
     img = Image.new("L", (1240, 1754), 245)
@@ -104,7 +104,10 @@ def scanned_affidavit(lines_printed, hand_fields, tamper=None, seed=1):
         pos.append((420, y - 10, x + 10, y + 44))
         y += 70
     d.ellipse((900, 1450, 1110, 1660), outline=90, width=5)
-    arr = np.array(img.rotate(0.6, fillcolor=245).filter(ImageFilter.GaussianBlur(0.6)), dtype=np.float32)
+    base = img.rotate(0.6, fillcolor=245).filter(ImageFilter.GaussianBlur(0.6))
+    if damage:
+        base = degrade(base, seed=seed)
+    arr = np.array(base, dtype=np.float32)
     arr += np.random.default_rng(seed).normal(0, 7, arr.shape)
     img = Image.fromarray(np.clip(arr, 0, 255).astype(np.uint8))
     if tamper:
@@ -168,3 +171,91 @@ def jpeg_with_exif(img, lat=None, lon=None, taken="2026:09:20 10:30:00", quality
     b = io.BytesIO()
     img.save(b, "JPEG", quality=quality, exif=ex)
     return b.getvalue()
+
+
+# ---------------- demo PKI: deterministic CA and issuer certificates, pyHanko-signed PDFs
+def _ec_key(label):
+    import hashlib
+    from cryptography.hazmat.primitives.asymmetric import ec
+    n = 0xFFFFFFFF00000000FFFFFFFFFFFFFFFFBCE6FAADA7179E84F3B9CAC2FC632551
+    v = int.from_bytes(hashlib.sha256((os.environ.get("ISSUER_KEY_SEED", "pramaan-demo-issuers") + label).encode()).digest(), "big") % (n - 1) + 1
+    return ec.derive_private_key(v, ec.SECP256R1())
+
+
+def _cert(subject_cn, key, issuer_cn, issuer_key, ca, serial):
+    from datetime import datetime, timezone
+    from cryptography import x509
+    from cryptography.hazmat.primitives import hashes
+    from cryptography.x509.oid import NameOID
+    name = lambda cn: x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, cn), x509.NameAttribute(NameOID.ORGANIZATION_NAME, "PRAMAAN demo PKI (mock)")])
+    b = (x509.CertificateBuilder().subject_name(name(subject_cn)).issuer_name(name(issuer_cn)).public_key(key.public_key())
+         .serial_number(serial).not_valid_before(datetime(2020, 1, 1, tzinfo=timezone.utc)).not_valid_after(datetime(2036, 1, 1, tzinfo=timezone.utc))
+         .add_extension(x509.BasicConstraints(ca=ca, path_length=None), critical=True)
+         .add_extension(x509.KeyUsage(digital_signature=not ca, content_commitment=not ca, key_encipherment=False, data_encipherment=False,
+                                      key_agreement=False, key_cert_sign=ca, crl_sign=ca, encipher_only=False, decipher_only=False), critical=True))
+    return b.sign(issuer_key, hashes.SHA256())
+
+
+CA_CN = "PRAMAAN Demo Issuer Root CA (mock)"
+
+
+def demo_ca():
+    k = _ec_key("CA")
+    return k, _cert(CA_CN, k, CA_CN, k, True, 1000)
+
+
+def issuer_cert(iid, name, ca_key):
+    k = _ec_key("SIG" + iid)
+    return k, _cert(name, k, CA_CN, ca_key, False, 2000 + sum(map(ord, iid)))
+
+
+def sign_pdf(pdf, key, cert, ca_cert):
+    from asn1crypto import keys as ak, x509 as ax
+    from cryptography.hazmat.primitives import serialization as ser
+    from pyhanko.pdf_utils.incremental_writer import IncrementalPdfFileWriter
+    from pyhanko.sign import signers
+    from pyhanko_certvalidator.registry import SimpleCertificateStore
+    sk = ak.PrivateKeyInfo.load(key.private_bytes(ser.Encoding.DER, ser.PrivateFormat.PKCS8, ser.NoEncryption()))
+    c = ax.Certificate.load(cert.public_bytes(ser.Encoding.DER))
+    ca = ax.Certificate.load(ca_cert.public_bytes(ser.Encoding.DER))
+    signer = signers.SimpleSigner(signing_cert=c, signing_key=sk, cert_registry=SimpleCertificateStore.from_certs([ca]))
+    out = signers.sign_pdf(IncrementalPdfFileWriter(io.BytesIO(pdf), strict=False), signers.PdfSignatureMetadata(field_name="IssuerSignature"), signer=signer)
+    return out.getvalue()
+
+
+def edit_after_signing(pdf, text="Valid until: 31-03-2060"):
+    """Forgery: an incremental update that adds visible text after the signature."""
+    from pyhanko.pdf_utils import generic
+    from pyhanko.pdf_utils.incremental_writer import IncrementalPdfFileWriter
+    w = IncrementalPdfFileWriter(io.BytesIO(pdf), strict=False)
+    page = w.root["/Pages"]["/Kids"][0].get_object()
+    stream = generic.StreamObject(stream_data=f"BT /F1 11 Tf 40 300 Td ({text}) Tj ET".encode())
+    ref = w.add_object(stream)
+    contents = page["/Contents"]
+    arr = contents if isinstance(contents, generic.ArrayObject) else generic.ArrayObject([page.raw_get("/Contents")])
+    arr.append(ref)
+    page["/Contents"] = arr
+    w.update_container(page)
+    b = io.BytesIO()
+    w.write(b)
+    return b.getvalue()
+
+
+def degrade(img, seed=1, folds=True, stain=True, low_dpi=True):
+    """Scan damage: low DPI resample, a fold line and a tea stain (FR-SYN-02)."""
+    rnd = random.Random(seed)
+    if low_dpi:
+        w, h = img.size
+        img = img.resize((int(w * 0.6), int(h * 0.6))).resize((w, h))
+    a = np.array(img, dtype=np.float32)
+    if folds:
+        y = rnd.randint(a.shape[0] // 3, 2 * a.shape[0] // 3)
+        a[y - 2:y + 2] *= 0.82
+        a[y + 2:y + 14] *= 1.04
+    if stain:
+        cy, cx, r = rnd.randint(200, a.shape[0] - 200), rnd.randint(200, a.shape[1] - 200), rnd.randint(60, 120)
+        yy, xx = np.ogrid[: a.shape[0], : a.shape[1]]
+        m = np.exp(-(((yy - cy) ** 2 + (xx - cx) ** 2) / (2 * r * r)))
+        tint = np.array([0.92, 0.85, 0.72]) if a.ndim == 3 else 0.85
+        a = a * (1 - m[..., None] * (1 - tint)) if a.ndim == 3 else a * (1 - m * (1 - tint))
+    return Image.fromarray(np.clip(a, 0, 255).astype(np.uint8))

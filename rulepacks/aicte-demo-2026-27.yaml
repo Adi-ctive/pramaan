@@ -2,11 +2,14 @@ key: aicte-demo-2026-27
 version: 1.2.0
 effective_from: 2026-07-01
 demo_value: true
+default_source_ref: "APH 2026-27 (placeholder citation)"
 source_note: "Illustrative rules modelled on the structure of an approval handbook. All values are demo placeholders, not real APH figures."
 
 taxonomy:
   SOCIETY_REG:
     label: "Society / Trust Registration Certificate"
+    requires_regions: [stamp, signature]
+    retention_days: 2555
     keywords: ["society registration", "registrar of societies"]
     fields:
       society_name: {anchor: "Name of Society", type: entity_name, required: true}
@@ -16,6 +19,8 @@ taxonomy:
     verification: [ref_lookup]
   LAND_LEASE:
     label: "Land / Lease Deed"
+    requires_regions: [stamp, signature]
+    retention_days: 2555
     keywords: ["lease deed", "lessee"]
     fields:
       lessee: {anchor: "Lessee", type: entity_name, required: true}
@@ -24,9 +29,11 @@ taxonomy:
       issued_on: {anchor: "Executed on", type: date, required: true}
       valid_to: {anchor: "Lease valid until", type: date, required: true}
       issuer: {anchor: "Registered at", type: string}
-    verification: [ref_lookup]
+    verification: [pdf_sig, ref_lookup]
   FIRE_NOC:
     label: "Fire Safety NOC"
+    requires_regions: [stamp, signature]
+    retention_days: 2555
     keywords: ["fire safety", "no objection certificate", "fire service"]
     fields:
       addressee: {anchor: "Issued to", type: entity_name, required: true}
@@ -38,6 +45,8 @@ taxonomy:
     issuer_max_validity_days: 1095
   BUILDING_COMPLETION:
     label: "Building Completion Certificate"
+    requires_regions: [stamp, signature]
+    retention_days: 2555
     keywords: ["completion certificate", "building plan"]
     fields:
       owner: {anchor: "Owner", type: entity_name, required: true}
@@ -45,7 +54,7 @@ taxonomy:
       issued_on: {anchor: "Date of issue", type: date, required: true}
       built_up_sqm: {anchor: "Built-up area (sq m)", type: number}
       issuer: {anchor: "Issuing authority", type: string}
-    verification: [ref_lookup]
+    verification: [pdf_sig, ref_lookup]
   AFFIDAVIT_GENERAL:
     label: "General Affidavit"
     keywords: ["affidavit", "deponent", "solemnly affirm"]
@@ -56,6 +65,8 @@ taxonomy:
     verification: []
   ACCREDITATION:
     label: "Accreditation Certificate"
+    requires_regions: [stamp, signature]
+    retention_days: 2555
     keywords: ["accreditation", "accredited"]
     fields:
       institution: {anchor: "Institution", type: entity_name, required: true}
@@ -124,6 +135,13 @@ rules:
   - {id: EXIF.geo, code: EXIF_LOCATION_MISMATCH, kind: exif_geo, action: "Re-take photographs on campus with location enabled"}
 
 plausibility:
+  - id: DATE.valid_after_issue
+    code: DATE_IMPLAUSIBLE
+    kind: plausibility
+    applies_to: "*"
+    source_ref: "APH 2026-27 placeholder §2.1"
+    expr: {">": [{"var": "doc.valid_to"}, {"var": "doc.issued_on"}]}
+    expected: "Valid-to date after the issue date"
   - id: DATE.before_establishment
     code: DATE_IMPLAUSIBLE
     kind: plausibility
@@ -179,9 +197,14 @@ severity:
   EXIF_LOCATION_MISMATCH: MEDIUM
   EXIF_MISSING: LOW
   INJECTION_INDICATOR: MEDIUM
+  REQUIRED_REGION_MISSING: MEDIUM
+  PDF_SIGNATURE_INVALID: HIGH
+  PDF_MODIFIED_AFTER_SIGNING: HIGH
+  ROOM_TYPE_MISMATCH: MEDIUM
+  MEDIA_NOT_ANALYSED: LOW
   CHECK_ERROR: MEDIUM
 
-institution_visible: [DOC_MISSING, DOC_EXPIRED, WRONG_DOC_TYPE, FIELD_MISSING, FORMAT_INVALID, NAME_MISMATCH, INTAKE_MISMATCH_RECORDS, FEE_SHORT, DATE_IMPLAUSIBLE, INFRA_SHORTFALL, EXIF_LOCATION_MISMATCH, EXIF_MISSING]
+institution_visible: [REQUIRED_REGION_MISSING, DOC_MISSING, DOC_EXPIRED, WRONG_DOC_TYPE, FIELD_MISSING, FORMAT_INVALID, NAME_MISMATCH, INTAKE_MISMATCH_RECORDS, FEE_SHORT, DATE_IMPLAUSIBLE, INFRA_SHORTFALL, EXIF_LOCATION_MISMATCH, EXIF_MISSING]
 
 risk_weights: {HIGH: 25, MEDIUM: 10, LOW: 3, INFO: 0}
 alerts:
