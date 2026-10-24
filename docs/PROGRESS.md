@@ -75,6 +75,11 @@ Live: https://pramaan-sih26.vercel.app (click "Enter as Senior Officer"). Script
 - No Docker Compose, Redis/Celery, MinIO, Mailpit or Caddy (see DECISIONS.md for what replaces each).
 - Tests now: 26 unit/integration, 8 Playwright acceptance (local), 5 non-destructive acceptance tests on the live site.
 
+## Real data
+
+Spec amended 24 Oct: real files from our own college are allowed with permission (DECISIONS.md #24). Put them in realdata/ with
+realdata/truth.csv (see realdata/README.md) and run `python tasks.py eval-real`. It runs offline and writes docs/EVAL-REAL.md (not committed).
+
 ## Where to resume
 
 Nothing is half done. Next ideas: real team lab photos and floor plans, Hindi handwriting, scanned tables.

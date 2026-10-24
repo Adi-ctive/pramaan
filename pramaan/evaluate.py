@@ -152,6 +152,7 @@ def hindi(pack, n, rnd):
             rows += 1
             errs.append(cer(got, want))
             exact += (got or "").strip() == want
+    providers.release("easyocr")  # otherwise later GPU stages spill into shared memory and crawl
     return {"hindi_cer": round(float(np.mean(errs)), 4), "hindi_exact": round(exact / rows, 3), "hindi_fields": rows}
 
 

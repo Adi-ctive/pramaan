@@ -242,6 +242,19 @@ class ReasoningLLM:
         return tok.decode(out[0][ids.shape[1]:], skip_special_tokens=True)
 
 
+def release(name):
+    """Unload one model and give its GPU memory back (6 GB cards cannot hold all six at once)."""
+    _cache.pop(name, None)
+    try:
+        import gc
+
+        import torch
+        gc.collect()
+        torch.cuda.empty_cache()
+    except Exception:
+        pass
+
+
 def envelope(doc_id, text):
     text = re.sub(r"</?document_data[^>]*>", "", text)
     return f'<document_data source="doc:{doc_id}">\n{text}\n</document_data>'
