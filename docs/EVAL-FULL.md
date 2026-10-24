@@ -1,8 +1,8 @@
 # Evaluation report (FULL mode)
 
-Run `EVAL-DCDE6718` at 2026-10-24T12:27 UTC, 6 samples per class, 1347.7 s.
+Run `EVAL-6E1E9695` at 2026-10-24T13:24 UTC, 6 samples per class, 2285.3 s.
 All material is freshly generated synthetic data with known answers. Numbers are as measured.
-This run read the live database, so the processing-time row describes the seeded applications that the hosted LITE build validated. FULL processing on the RTX 4050 measured about 29 s per application and 4.3 s per document.
+This run read the live database, so the processing-time row describes the seeded applications that the hosted LITE build validated. FULL processing on the RTX 4050 measured about 29 s per application.
 
 | Metric | Value |
 |---|---|
@@ -21,7 +21,7 @@ This run read the live database, so the processing-time row describes the seeded
 | Room-type accuracy | 75.0% |
 | Walkthrough video count MAE (best frame) | 0.67 over 3 videos |
 | Floor-plan area error (vector plans) | 0.0% over 6 plans |
-| Avg processing time | 2064 ms/app, 258 ms/doc |
+| Avg processing time | 2041 ms/app, 255 ms/doc |
 | Alert delay | 0.0 ms (Alerts are raised in the same run that finds the condition; delay is measured in-process.) |
 | Estimated manual effort reduction | 85.0% (assumes 6.0 min/doc baseline, 2.0 min/flag) |
 
