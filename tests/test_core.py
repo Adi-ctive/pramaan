@@ -1,24 +1,11 @@
 import os
 
-import mongomock
 import pytest
 from fastapi.testclient import TestClient
 
-os.environ.pop("MONGODB_URI", None)
-os.environ["PUBLIC_URL"] = "http://127.0.0.1:9"
-os.environ["SEED_TOKEN"] = "t"
-
-from pramaan import audit, db, security  # noqa: E402
-from pramaan.main import app  # noqa: E402
-from pramaan.seed import reset  # noqa: E402
-
-PW = "test-pass-123"
-
-
-@pytest.fixture(scope="module")
-def seeded():
-    db.set_db(mongomock.MongoClient()["t"])
-    return reset(password=PW)
+from conftest import PW
+from pramaan import audit, db, security
+from pramaan.main import app
 
 
 def login(c, user):

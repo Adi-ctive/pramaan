@@ -36,7 +36,7 @@ def _ctx(d, view):
     if view == "institution":
         return {**d, "view": view}
     present = {x["slot"] for x in d["documents"] if not x.get("superseded")}
-    return {**d, "view": view, "present": present, "sections": SECTIONS}
+    return {**d, "app": d["application"], "view": view, "present": present, "sections": SECTIONS}
 
 
 def render_html(d, view="full"):

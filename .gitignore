@@ -9,3 +9,5 @@ private/
 
 .vercel
 .env*
+.pids.json
+server.log

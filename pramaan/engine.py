@@ -164,22 +164,32 @@ def read_scanned(img, pack, slot, th):
     fields, htr = {}, []
     W, H = img.size
     for fname, fs in (spec.get("fields") or {}).items():
-        ln = next((l for l in lines if fs["anchor"].lower() in l["text"].lower()), None)
+        anc = fs["anchor"].lower()
+        ln = next((l for l in lines if l["text"].lower().startswith(anc) or anc + ":" in l["text"].lower()), None) or             next((l for l in lines if anc in l["text"].lower()), None)
         if not ln:
             continue
         raw = re.split(re.escape(fs["anchor"]) + r"\s*:?", ln["text"], flags=re.I)[-1].strip()
-        c = ln["conf"]
-        ax = next((w for w in ln["words"] if fs["anchor"].split()[-1].lower().strip(":") in w["text"].lower()), None)
-        x0 = (ax["bbox"][0] + ax["bbox"][2]) if ax else ln["bbox"][0] + ln["bbox"][2] / 3
-        band = [x0, max(0, ln["bbox"][1] - 0.006), min(1 - x0, 0.6), ln["bbox"][3] + 0.012]
-        if not raw or c < th.get("ocr_min_conf", 0.8):
-            crop = img.crop((int(band[0] * W), int(band[1] * H), int((band[0] + band[2]) * W), int((band[1] + band[3]) * H)))
+        c, band = ln["conf"], ln["bbox"]
+        if not raw:
+            # value written beside the label: nearest OCR line to the right that overlaps vertically
+            y0, y1 = ln["bbox"][1] - ln["bbox"][3], ln["bbox"][1] + 2 * ln["bbox"][3]
+            cands = [l for l in lines if l is not ln and l["bbox"][0] > ln["bbox"][0] + ln["bbox"][2] - 0.01 and y0 <= l["bbox"][1] <= y1]
+            nb = min(cands, key=lambda l: abs(l["bbox"][1] - ln["bbox"][1]) + l["bbox"][0], default=None)
+            if nb:
+                raw, c, band = nb["text"], nb["conf"], nb["bbox"]
+        if band is not ln["bbox"] and c < th.get("ocr_min_conf", 0.8):
+            pad = 0.004
+            crop = img.crop((int(max(0, band[0] - pad) * W), int(max(0, band[1] - pad) * H), int(min(1, band[0] + band[2] + pad) * W),
+                             int(min(1, band[1] + band[3] + pad) * H)))
             h = providers.htr.read(crop)
-            if h:
+
+            def parses(t):
+                return fs.get("type") not in ("date", "number") or (extract.norm_date(t) if fs["type"] == "date" else extract.norm_number(t)) is not None
+            if h and (parses(h["text"]), h["conf"]) > (parses(raw), c):
                 raw, c = h["text"], h["conf"]
-                htr.append({"field": fname, "text": raw, "conf": c, "bbox": band})
+            htr.append({"field": fname, "text": raw, "conf": c, "bbox": band})
         val = extract.norm_date(raw) if fs.get("type") == "date" else extract.norm_number(raw) if fs.get("type") == "number" else raw
-        fields[fname] = {"value": val, "raw": raw, "page": 0, "bbox": band, "conf": round(c if val is not None else min(c, 0.4), 3)}
+        fields[fname] = {"value": val, "raw": raw, "page": 0, "bbox": [round(float(v), 4) for v in band], "conf": round(c if val is not None else min(c, 0.4), 3)}
     return {"fields": fields, "htr": htr, "ocr_lines": len(lines), "text": text, "type": t, "type_conf": conf,
             "deskew_deg": angle, "ocr_used": True}
 
@@ -390,7 +400,8 @@ def run(app_id, changed=None, actor="system", pack_override=None, dry=False, age
                 continue
             for fname, fs in (spec.get("fields") or {}).items():
                 f = r["fields"].get(fname)
-                if fs.get("required") and (not f or f.get("value") is None):
+                low = f and f.get("conf", 1) < pack["thresholds"].get("htr_min_conf", 0.7)
+                if fs.get("required") and (not f or (f.get("value") is None and not low)):
                     F.add("FIELD_MISSING", "COMPLETENESS", f"{spec['label']}: '{fs['anchor']}' not found",
                           "Required field is missing or unreadable.", [], doc_id=d["id"], key=fname,
                           action=f"Upload a copy that shows '{fs['anchor']}'")
@@ -531,11 +542,11 @@ def run(app_id, changed=None, actor="system", pack_override=None, dry=False, age
                     import numpy as np
                     cos_th = pack["thresholds"].get("duplicate_embed_cos", 0.95)
                     for o in db.documents.find({"app_id": {"$ne": app_id}, "superseded": {"$ne": True}, "result.images.emb": {"$ne": None}},
-                                               {"id": 1, "app_id": 1, "result.images.emb": 1}):
+                                               {"id": 1, "app_id": 1, "result.images.emb": 1, "result.images.hash": 1}):
                         for oi in o["result"]["images"]:
                             if oi.get("emb") and app_inst.get(o["app_id"]) != app["institution_id"]:
                                 cos = float(np.dot(im["emb"], oi["emb"]))
-                                if cos >= cos_th:
+                                if cos >= cos_th and forensics.hamming(h, oi["hash"]) <= 20:
                                     F.add("DUPLICATE_ACROSS_INSTITUTIONS", "ANOMALY", "Image matches a document from another institution",
                                           f"Image-embedding similarity {cos:.3f} >= {cos_th}.",
                                           [{"type": "duplicate", "document_id": d["id"], "other_document_id": o["id"],

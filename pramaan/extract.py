@@ -22,6 +22,9 @@ def norm_date(s):
             return datetime.strptime(s, f).date().isoformat()
         except ValueError:
             pass
+    m = re.search(r"(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})(?!\d)", s)
+    if m and s.strip() != m.group(0):
+        return norm_date(m.group(0))
     return None
 
 

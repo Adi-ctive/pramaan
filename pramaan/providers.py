@@ -107,7 +107,11 @@ class ObjectDetector:
                 r = proc.post_process_grounded_object_detection(out, inp.input_ids, box_threshold=0.35, text_threshold=0.25,
                                                                 target_sizes=[img.size[::-1]])[0]
                 boxes = r["boxes"].cpu().numpy().tolist()
-                return {"count": len(_nms(boxes, r["scores"].cpu().numpy().tolist())), "conf": 0.75, "detector": self.role, "boxes": boxes[:60]}
+                keep = [boxes[i] for i in _nms(boxes, r["scores"].cpu().numpy().tolist())]
+                if keep:  # drop boxes far larger than the typical instance (boards, whole rows)
+                    med = float(np.median([(b[2] - b[0]) * (b[3] - b[1]) for b in keep]))
+                    keep = [b for b in keep if (b[2] - b[0]) * (b[3] - b[1]) <= 4 * med]
+                return {"count": len(keep), "conf": 0.75, "detector": self.role, "boxes": [[round(v, 1) for v in b] for b in keep[:60]]}
         from . import infra
         v = infra.vlm_count(img, label)
         if v and "count" in v:

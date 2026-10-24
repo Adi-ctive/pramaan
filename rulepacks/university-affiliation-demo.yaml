@@ -129,4 +129,5 @@ thresholds:
   htr_min_conf: 0.70
   noise_suspicion: 0.65
   duplicate_hash_hamming: 6
+  duplicate_embed_cos: 0.97
   min_text_chars: 40
