@@ -1,0 +1,113 @@
+key: university-affiliation-demo
+version: 1.0.0
+effective_from: 2026-07-01
+demo_value: true
+source_note: "Second illustrative pack for a university affiliation portal. Subset of rules, different slot wording on the host side."
+
+taxonomy:
+  SOCIETY_REG:
+    label: "Society / Trust Registration Certificate"
+    keywords: ["society registration", "registrar of societies"]
+    fields:
+      society_name: {anchor: "Name of Society", type: entity_name, required: true}
+      reg_no: {anchor: "Registration No", type: string, required: true, pattern: "^SR/[A-Z]{2}/\\d{4}/\\d{4,6}$"}
+      issued_on: {anchor: "Date of Registration", type: date, required: true}
+      issuer: {anchor: "Issued by", type: string}
+    verification: [ref_lookup]
+  FIRE_NOC:
+    label: "Fire Safety NOC"
+    keywords: ["fire safety", "no objection certificate", "fire service"]
+    fields:
+      addressee: {anchor: "Issued to", type: entity_name, required: true}
+      ref_no: {anchor: "NOC No", type: string, required: true, pattern: "^FS/[A-Z]{2}/\\d{4}/\\d{5}$"}
+      issued_on: {anchor: "Date of issue", type: date, required: true}
+      valid_to: {anchor: "Valid until", type: date, required: true}
+      issuer: {anchor: "Issuing office", type: string}
+    verification: [qr, ref_lookup]
+    issuer_max_validity_days: 1095
+  BUILDING_COMPLETION:
+    label: "Building Completion Certificate"
+    keywords: ["completion certificate", "building plan"]
+    fields:
+      owner: {anchor: "Owner", type: entity_name, required: true}
+      ref_no: {anchor: "Certificate No", type: string, required: true, pattern: "^BC/[A-Z]{2}/\\d{4}/\\d{4,6}$"}
+      issued_on: {anchor: "Date of issue", type: date, required: true}
+      issuer: {anchor: "Issuing authority", type: string}
+    verification: [ref_lookup]
+  FEE_RECEIPT:
+    label: "Affiliation Fee Receipt"
+    keywords: ["fee receipt", "amount received"]
+    fields:
+      payer: {anchor: "Received from", type: entity_name, required: true}
+      ref_no: {anchor: "Receipt No", type: string, required: true, pattern: "^TR/\\d{4}/\\d{6}$"}
+      amount: {anchor: "Amount (INR)", type: number, required: true}
+      paid_on: {anchor: "Paid on", type: date, required: true}
+    verification: []
+
+categories:
+  AFFILIATION:
+    label: "Continuation of Affiliation"
+    required_slots: [SOCIETY_REG, FIRE_NOC, BUILDING_COMPLETION, FEE_RECEIPT]
+
+rules:
+  - {id: FIRE_NOC.expiry, code: DOC_EXPIRED, kind: expiry, applies_to: FIRE_NOC, field: valid_to, action: "Upload a valid Fire Clearance Certificate"}
+  - id: XDOC.society_name_match
+    code: NAME_MISMATCH
+    kind: entity_match
+    left: "SOCIETY_REG.society_name"
+    right: ["FIRE_NOC.addressee", "BUILDING_COMPLETION.owner", "FEE_RECEIPT.payer", "records.society_name"]
+    threshold: 0.85
+    action: "Explain or correct the name difference"
+
+plausibility:
+  - id: DATE.before_establishment
+    code: DATE_IMPLAUSIBLE
+    kind: plausibility
+    applies_to: "*"
+    expr: {">=": [{"var": "doc.issued_on"}, {"var": "records.established_on"}]}
+    expected: "Issue date on or after the institution's establishment date"
+  - id: DATE.future
+    code: DATE_IMPLAUSIBLE
+    kind: plausibility
+    applies_to: "*"
+    expr: {"<=": [{"var": "doc.issued_on"}, {"var": "app.submitted_on"}]}
+    expected: "Issue date not after the submission date"
+
+infrastructure: {facilities: {}, exif: {max_distance_km: 2.0, capture_window_days: 180}}
+
+severity:
+  DOC_MISSING: HIGH
+  DOC_EXPIRED: HIGH
+  WRONG_DOC_TYPE: HIGH
+  FIELD_MISSING: MEDIUM
+  FORMAT_INVALID: MEDIUM
+  NAME_MISMATCH: MEDIUM
+  DATE_IMPLAUSIBLE: HIGH
+  VALIDITY_TOO_LONG: MEDIUM
+  TAMPER_INDICATOR: HIGH
+  PDF_EDIT_INDICATOR: MEDIUM
+  DUPLICATE_ACROSS_INSTITUTIONS: HIGH
+  DUPLICATE_WITHIN_APPLICATION: LOW
+  QR_MISMATCH: HIGH
+  QR_SIGNATURE_INVALID: HIGH
+  REF_MISMATCH: HIGH
+  REF_NOT_FOUND: MEDIUM
+  VERIFICATION_SOURCE_UNAVAILABLE: MEDIUM
+  HTR_LOW_CONFIDENCE: LOW
+  EXTRACTION_LOW_CONFIDENCE: LOW
+  INJECTION_INDICATOR: MEDIUM
+  CHECK_ERROR: MEDIUM
+
+institution_visible: [DOC_MISSING, DOC_EXPIRED, WRONG_DOC_TYPE, FIELD_MISSING, FORMAT_INVALID, NAME_MISMATCH, DATE_IMPLAUSIBLE]
+
+risk_weights: {HIGH: 25, MEDIUM: 10, LOW: 3, INFO: 0}
+alerts:
+  - {type: MISSING_DOCUMENT, on_codes: [DOC_MISSING], notify: [SCRUTINY_OFFICER]}
+  - {type: PENDING_VERIFICATION, on_codes: [VERIFICATION_SOURCE_UNAVAILABLE], notify: [SCRUTINY_OFFICER]}
+  - {type: SLA_BREACH, sla_days: 15, notify: [SENIOR_OFFICER]}
+thresholds:
+  name_match: 0.85
+  htr_min_conf: 0.70
+  noise_suspicion: 0.65
+  duplicate_hash_hamming: 6
+  min_text_chars: 40

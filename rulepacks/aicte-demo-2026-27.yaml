@@ -1,0 +1,198 @@
+key: aicte-demo-2026-27
+version: 1.2.0
+effective_from: 2026-07-01
+demo_value: true
+source_note: "Illustrative rules modelled on the structure of an approval handbook. All values are demo placeholders, not real APH figures."
+
+taxonomy:
+  SOCIETY_REG:
+    label: "Society / Trust Registration Certificate"
+    keywords: ["society registration", "registrar of societies"]
+    fields:
+      society_name: {anchor: "Name of Society", type: entity_name, required: true}
+      reg_no: {anchor: "Registration No", type: string, required: true, pattern: "^SR/[A-Z]{2}/\\d{4}/\\d{4,6}$"}
+      issued_on: {anchor: "Date of Registration", type: date, required: true}
+      issuer: {anchor: "Issued by", type: string}
+    verification: [ref_lookup]
+  LAND_LEASE:
+    label: "Land / Lease Deed"
+    keywords: ["lease deed", "lessee"]
+    fields:
+      lessee: {anchor: "Lessee", type: entity_name, required: true}
+      lessor: {anchor: "Lessor", type: string}
+      ref_no: {anchor: "Deed No", type: string, required: true, pattern: "^LD/[A-Z]{2}/\\d{4}/\\d{4,6}$"}
+      issued_on: {anchor: "Executed on", type: date, required: true}
+      valid_to: {anchor: "Lease valid until", type: date, required: true}
+      issuer: {anchor: "Registered at", type: string}
+    verification: [ref_lookup]
+  FIRE_NOC:
+    label: "Fire Safety NOC"
+    keywords: ["fire safety", "no objection certificate", "fire service"]
+    fields:
+      addressee: {anchor: "Issued to", type: entity_name, required: true}
+      ref_no: {anchor: "NOC No", type: string, required: true, pattern: "^FS/[A-Z]{2}/\\d{4}/\\d{5}$"}
+      issued_on: {anchor: "Date of issue", type: date, required: true}
+      valid_to: {anchor: "Valid until", type: date, required: true}
+      issuer: {anchor: "Issuing office", type: string}
+    verification: [qr, ref_lookup]
+    issuer_max_validity_days: 1095
+  BUILDING_COMPLETION:
+    label: "Building Completion Certificate"
+    keywords: ["completion certificate", "building plan"]
+    fields:
+      owner: {anchor: "Owner", type: entity_name, required: true}
+      ref_no: {anchor: "Certificate No", type: string, required: true, pattern: "^BC/[A-Z]{2}/\\d{4}/\\d{4,6}$"}
+      issued_on: {anchor: "Date of issue", type: date, required: true}
+      built_up_sqm: {anchor: "Built-up area (sq m)", type: number}
+      issuer: {anchor: "Issuing authority", type: string}
+    verification: [ref_lookup]
+  AFFIDAVIT_GENERAL:
+    label: "General Affidavit"
+    keywords: ["affidavit", "deponent", "solemnly affirm"]
+    fields:
+      deponent: {anchor: "Deponent", type: string, required: true}
+      society_name: {anchor: "On behalf of", type: entity_name, required: true}
+      issued_on: {anchor: "Sworn on", type: date, required: true}
+    verification: []
+  ACCREDITATION:
+    label: "Accreditation Certificate"
+    keywords: ["accreditation", "accredited"]
+    fields:
+      institution: {anchor: "Institution", type: entity_name, required: true}
+      programme: {anchor: "Programme", type: string, required: true}
+      ref_no: {anchor: "Certificate No", type: string, required: true, pattern: "^AC/\\d{4}/\\d{5}$"}
+      issued_on: {anchor: "Date of issue", type: date, required: true}
+      valid_to: {anchor: "Valid until", type: date, required: true}
+      issuer: {anchor: "Accrediting body", type: string}
+    verification: [qr, ref_lookup]
+  FEE_RECEIPT:
+    label: "Processing Fee Receipt"
+    keywords: ["fee receipt", "amount received"]
+    fields:
+      payer: {anchor: "Received from", type: entity_name, required: true}
+      ref_no: {anchor: "Receipt No", type: string, required: true, pattern: "^TR/\\d{4}/\\d{6}$"}
+      amount: {anchor: "Amount (INR)", type: number, required: true}
+      paid_on: {anchor: "Paid on", type: date, required: true}
+    verification: []
+  INFRA_PHOTOS:
+    label: "Infrastructure photographs"
+    kind: photos
+    fields: {}
+    verification: []
+
+categories:
+  EOA:
+    label: "Extension of Approval"
+    required_slots: [SOCIETY_REG, LAND_LEASE, FIRE_NOC, BUILDING_COMPLETION, AFFIDAVIT_GENERAL, ACCREDITATION, FEE_RECEIPT, INFRA_PHOTOS]
+    conditional_slots:
+      - slot: ACCREDITATION
+        when: {"==": [{"var": "app.has_accredited_programmes"}, true]}
+
+rules:
+  - {id: LAND_LEASE.expiry, code: DOC_EXPIRED, kind: expiry, applies_to: LAND_LEASE, field: valid_to, action: "Upload a current lease deed"}
+  - {id: FIRE_NOC.expiry, code: DOC_EXPIRED, kind: expiry, applies_to: FIRE_NOC, field: valid_to, action: "Request a renewed Fire NOC"}
+  - {id: ACCREDITATION.expiry, code: DOC_EXPIRED, kind: expiry, applies_to: ACCREDITATION, field: valid_to, action: "Upload the current accreditation certificate"}
+  - id: XDOC.society_name_match
+    code: NAME_MISMATCH
+    kind: entity_match
+    left: "SOCIETY_REG.society_name"
+    right: ["LAND_LEASE.lessee", "FIRE_NOC.addressee", "BUILDING_COMPLETION.owner", "AFFIDAVIT_GENERAL.society_name", "FEE_RECEIPT.payer", "app.society_name", "records.society_name"]
+    threshold: 0.88
+    action: "Explain or correct the name difference across documents"
+  - id: XDOC.institution_name_match
+    code: NAME_MISMATCH
+    kind: entity_match
+    left: "app.institution_name"
+    right: ["ACCREDITATION.institution", "records.name"]
+    threshold: 0.88
+    action: "Explain or correct the institution name"
+  - id: REC.intake_match
+    code: INTAKE_MISMATCH_RECORDS
+    kind: expr
+    expr: {"==": [{"var": "app.current_intake"}, {"var": "records.approved_intake"}]}
+    expected: "Claimed intake equals approved intake in records"
+    observed_var: "app.current_intake"
+    action: "Reconcile claimed intake with the approved intake"
+  - id: FEE.amount
+    code: FEE_SHORT
+    kind: expr
+    expr: {">=": [{"var": "FEE_RECEIPT.amount"}, 150000]}
+    expected: "Fee >= 150000 (demo value)"
+    observed_var: "FEE_RECEIPT.amount"
+    action: "Pay the balance processing fee"
+  - {id: COUNT.computer_lab, code: INFRA_SHORTFALL, kind: count_vs_claim, facility_type: COMPUTER_LAB, action: "Provide additional evidence; physical inspection may be required"}
+  - {id: EXIF.geo, code: EXIF_LOCATION_MISMATCH, kind: exif_geo, action: "Re-take photographs on campus with location enabled"}
+
+plausibility:
+  - id: DATE.before_establishment
+    code: DATE_IMPLAUSIBLE
+    kind: plausibility
+    applies_to: "*"
+    expr: {">=": [{"var": "doc.issued_on"}, {"var": "records.established_on"}]}
+    expected: "Issue date on or after the institution's establishment date"
+  - id: DATE.future
+    code: DATE_IMPLAUSIBLE
+    kind: plausibility
+    applies_to: "*"
+    expr: {"<=": [{"var": "doc.issued_on"}, {"var": "app.submitted_on"}]}
+    expected: "Issue date not after the submission date"
+  - id: VALIDITY.issuer_max
+    code: VALIDITY_TOO_LONG
+    kind: max_validity
+    applies_to: "*"
+
+infrastructure:
+  facilities:
+    COMPUTER_LAB:
+      room_labels: ["computer lab", "computer laboratory"]
+      count_object: "computer monitor"
+      claim_field: claimed_workstations
+      tolerance_pct: 15
+  exif:
+    max_distance_km: 2.0
+    capture_window_days: 180
+
+severity:
+  DOC_MISSING: HIGH
+  DOC_EXPIRED: HIGH
+  WRONG_DOC_TYPE: HIGH
+  FIELD_MISSING: MEDIUM
+  FORMAT_INVALID: MEDIUM
+  NAME_MISMATCH: MEDIUM
+  INTAKE_MISMATCH_RECORDS: HIGH
+  FEE_SHORT: MEDIUM
+  DATE_IMPLAUSIBLE: MEDIUM
+  VALIDITY_TOO_LONG: MEDIUM
+  TAMPER_INDICATOR: HIGH
+  PDF_EDIT_INDICATOR: MEDIUM
+  DUPLICATE_ACROSS_INSTITUTIONS: HIGH
+  DUPLICATE_WITHIN_APPLICATION: LOW
+  QR_MISMATCH: HIGH
+  QR_SIGNATURE_INVALID: HIGH
+  REF_MISMATCH: HIGH
+  REF_NOT_FOUND: MEDIUM
+  VERIFICATION_SOURCE_UNAVAILABLE: MEDIUM
+  HTR_LOW_CONFIDENCE: LOW
+  EXTRACTION_LOW_CONFIDENCE: LOW
+  INFRA_SHORTFALL: HIGH
+  INFRA_DETECTOR_UNAVAILABLE: LOW
+  EXIF_LOCATION_MISMATCH: MEDIUM
+  EXIF_MISSING: LOW
+  INJECTION_INDICATOR: MEDIUM
+  CHECK_ERROR: MEDIUM
+
+institution_visible: [DOC_MISSING, DOC_EXPIRED, WRONG_DOC_TYPE, FIELD_MISSING, FORMAT_INVALID, NAME_MISMATCH, INTAKE_MISMATCH_RECORDS, FEE_SHORT, DATE_IMPLAUSIBLE, INFRA_SHORTFALL, EXIF_LOCATION_MISMATCH, EXIF_MISSING]
+
+risk_weights: {HIGH: 25, MEDIUM: 10, LOW: 3, INFO: 0}
+alerts:
+  - {type: MISSING_DOCUMENT, on_codes: [DOC_MISSING], notify: [SCRUTINY_OFFICER]}
+  - {type: EXPIRED_DOCUMENT, on_codes: [DOC_EXPIRED], notify: [SCRUTINY_OFFICER]}
+  - {type: SUSPECTED_ANOMALY, on_codes: [TAMPER_INDICATOR, DUPLICATE_ACROSS_INSTITUTIONS, QR_MISMATCH, QR_SIGNATURE_INVALID], notify: [SCRUTINY_OFFICER, SENIOR_OFFICER]}
+  - {type: PENDING_VERIFICATION, on_codes: [VERIFICATION_SOURCE_UNAVAILABLE], notify: [SCRUTINY_OFFICER]}
+  - {type: SLA_BREACH, sla_days: 10, notify: [SENIOR_OFFICER]}
+thresholds:
+  name_match: 0.88
+  htr_min_conf: 0.70
+  noise_suspicion: 0.65
+  duplicate_hash_hamming: 6
+  min_text_chars: 40
