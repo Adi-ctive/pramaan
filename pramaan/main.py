@@ -26,6 +26,13 @@ async def headers(request: Request, call_next):
     return resp
 
 
+@app.on_event("startup")
+def autoseed():
+    if not os.environ.get("MONGODB_URI") and not os.environ.get("VERCEL") and not get_db().users.find_one():
+        from .seed import reset
+        reset(password=os.environ.get("DEMO_PASSWORD", "demo-local"))
+
+
 def access_log(user, what, obj):
     get_db().access_log.insert_one({"ts": now().isoformat(), "user": user["sub"], "role": user["role"], "what": what, "object": obj})
 
@@ -200,7 +207,9 @@ async def w_upload(slot: str = Form(...), file: UploadFile = File(...), facility
         return JSONResponse({"level": "error", "text": err}, status_code=422)
     pack, _ = engine.active_pack(a["pack_key"])
     if canon == "INFRA_PHOTOS" and not facility:
-        facility = file.filename.split("__")[0] if "__" in file.filename else None
+        import re
+        hit = re.search(r"([A-Z]+_[A-Z]+_\d+)__", file.filename)
+        facility = hit.group(1) if hit else None
     doc_id = add_document(a["id"], canon, file.filename, data, facility)
     resub = a["status"] not in ("DRAFT",)
     if resub:
@@ -311,6 +320,14 @@ def app_detail(app_id: str, user=Depends(require("view_queue"))):
     access_log(user, "application.view", app_id)
     rep = clean(db.reports.find_one({"app_id": app_id}, sort=[("version", -1)]))
     flags = [clean(f) for f in db.flags.find({"app_id": app_id, "current": True})]
+    for f in flags:
+        for e in f["evidence"]:
+            if e.get("type") == "duplicate" and e.get("other_document_id"):
+                o = db.documents.find_one({"id": e["other_document_id"]}, {"result.pages": 1, "app_id": 1, "filename": 1})
+                if o:
+                    oa = db.applications.find_one({"id": o["app_id"]}, {"form.institution_name": 1})
+                    e["other_pages"] = (o.get("result") or {}).get("pages", [])
+                    e["other_label"] = f"{o['filename']} - {oa['form']['institution_name'] if oa else o['app_id']}"
     docs = []
     for d in db.documents.find({"app_id": app_id}).sort("uploaded_at", 1):
         r = d.get("result") or {}
@@ -440,6 +457,14 @@ def ack(aid: str, user=Depends(require("dispose_flags"))):
 @app.get("/api/rulepacks")
 def packs(user=Depends(current_user)):
     return [clean(p) for p in get_db().rule_packs.find().sort([("key", 1), ("created", -1)])]
+
+
+@app.get("/api/rulepacks/sample-apps")
+def pack_samples(user=Depends(current_user)):
+    if not can(user, "edit_rules"):
+        return []
+    return [{"id": a["id"], "external_ref": a.get("external_ref"), "institution": a["form"]["institution_name"]}
+            for a in get_db().applications.find({"status": {"$ne": "DRAFT"}})]
 
 
 @app.post("/api/rulepacks/validate")

@@ -547,7 +547,8 @@ def send_webhook(app, event, version):
     entry = {"id": new_id("WH"), "host_id": host["id"], "event": event, "app_id": app["id"], "ts": now().isoformat()}
     url = host["webhook_url"]
     if url.startswith("/"):
-        url = os.environ.get("PUBLIC_URL", "http://127.0.0.1:8000") + url
+        prod = os.environ.get("VERCEL_PROJECT_PRODUCTION_URL")
+        url = os.environ.get("PUBLIC_URL", f"https://{prod}" if prod else "http://127.0.0.1:8010") + url
     for attempt in range(2):
         try:
             r = httpx.post(url, content=body, headers={"X-Pramaan-Signature": sig, "Content-Type": "application/json"},

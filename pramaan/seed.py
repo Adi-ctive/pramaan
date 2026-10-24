@@ -190,7 +190,7 @@ def build_docs(cx, inst, kind, n):
     elif kind == "PROBLEM-A":
         donor = cx.donor_photo
         add("INFRA_PHOTOS", "COMPUTER_LAB_1__01.jpg", synth.jpeg_with_exif(synth.lab_photo(12, seed=n * 7), lat, lon), "COMPUTER_LAB_1")
-        add("INFRA_PHOTOS", "COMPUTER_LAB_1__02.jpg", synth.jpeg_with_exif(donor, lat + 0.36, lon), "COMPUTER_LAB_2")
+        add("INFRA_PHOTOS", "COMPUTER_LAB_2__01.jpg", synth.jpeg_with_exif(donor, lat + 0.36, lon), "COMPUTER_LAB_2")
         expect += ["INFRA_SHORTFALL", "DUPLICATE_ACROSS_INSTITUTIONS", "EXIF_LOCATION_MISMATCH", "INTAKE_MISMATCH_RECORDS"]
     return docs, sorted(set(expect)), renewed
 
@@ -260,6 +260,18 @@ def reset(samples_dir=None, password=None):
             if renewed:
                 with open(os.path.join(d, "FIRE_NOC__fire_noc_renewed.pdf"), "wb") as f:
                     f.write(renewed)
+    if samples_dir:
+        rows = []
+        for kind in sorted(os.listdir(samples_dir)):
+            p = os.path.join(samples_dir, kind)
+            if os.path.isdir(p):
+                rows.append(f"<h3>{kind}</h3><ul>" + "".join(f'<li><a href="{kind}/{f}" download>{f}</a></li>' for f in sorted(os.listdir(p))) + "</ul>")
+        with open(os.path.join(samples_dir, "index.html"), "w", encoding="utf-8") as f:
+            f.write("<!doctype html><meta charset=utf-8><meta name=viewport content='width=device-width,initial-scale=1'><title>Sample files</title>"
+                    "<body style='font-family:system-ui;max-width:760px;margin:20px auto;padding:0 16px'><h2>Synthetic sample files (fictional)</h2>"
+                    "<p>File names start with the canonical slot. Photos carry the facility (COMPUTER_LAB_1 / COMPUTER_LAB_2). "
+                    "GOLDEN-A and PROBLEM-A are for Host A; GOLDEN-B and PROBLEM-B for Host B. PROBLEM-A: use institution INST-012, intake 180, "
+                    "Lab 1 = 30 and Lab 2 = 15 claimed. FIRE_NOC__fire_noc_renewed.pdf is the rectification upload.</p>" + "".join(rows))
     for kind in ("DONOR", "GOLDEN-A", "PROBLEM-A", "GOLDEN-B", "PROBLEM-B"):
         engine.run(out[kind], actor="seed")
     return {"apps": out, "password": pw, "host_keys": {k: v[:8] + "..." for k, v in keys.items()}}

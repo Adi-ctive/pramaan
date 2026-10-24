@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>University Affiliation Portal (mock)</title>
+<style>
+body{margin:0;font-family:Georgia,serif;background:#fdf8f6;color:#2a0f0f}header{background:#7f1d1d;color:#fff;padding:16px}
+header b{font-size:20px}header small{display:block;opacity:.8;font-family:system-ui}main{max-width:760px;margin:16px auto;padding:0 16px}
+.box{background:#fff;border:2px solid #7f1d1d;border-radius:4px;padding:16px;margin-bottom:12px}label{display:block;font-size:14px;margin:8px 0 2px}
+select,input{font:inherit;padding:6px;width:100%;box-sizing:border-box}button{font:inherit;padding:7px 14px;background:#7f1d1d;color:#fff;border:0;cursor:pointer;margin-top:10px}
+footer{font-size:11px;color:#78716c;text-align:center;padding:16px;font-family:system-ui}a{color:#7f1d1d}
+</style></head><body>
+<header><b>University Affiliation Portal (mock)</b><small>Continuation of affiliation · fictional portal, not a real university</small></header>
+<main>
+  <div class="box" data-step="1">
+    <label for="inst">College</label><select id="inst"></select>
+    <label for="intake">Sanctioned intake</label><input id="intake" type="number" value="60">
+    <button id="start">Begin affiliation application</button>
+  </div>
+  <div class="box" data-step="2" hidden>
+    <h3>Affiliation documents - <span id="ref"></span></h3>
+    <p style="font-size:13px;font-family:system-ui">Sample files: <a href="/samples/" target="_blank">download synthetic sets</a></p>
+    <div id="pramaan-uploader" style="--pramaan-primary:#7f1d1d"></div>
+    <h4>Status (from signed webhooks)</h4><ul id="status" style="font-size:13px;font-family:system-ui"></ul>
+    <button id="reset" style="background:#78716c">Start a new application</button>
+  </div>
+</main>
+<footer>Powered by PRAMAAN validation engine · <a href="/host-a/">Switch host</a> · <a href="/">Officer console</a></footer>
+<script src="/widget/v1/pramaan.js"></script><script src="/widget/v1/mockhost.js"></script>
+<script>
+var ui = mockHost("b", { docStep: 2, defaultInst: "INST-021", form: function () {
+  return { current_intake: +document.getElementById("intake").value, has_accredited_programmes: false, facilities: [] };
+} });
+</script></body></html>
