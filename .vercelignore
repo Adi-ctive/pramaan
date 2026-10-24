@@ -4,3 +4,7 @@ tests
 docs
 private
 *.md
+e2e
+scripts
+requirements-full.txt
+.claude

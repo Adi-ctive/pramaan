@@ -1,10 +1,12 @@
 /* Shared script for the two mock host portals. The host's own back-end (/api/mock-hosts/{h}/start) holds its API key. */
 function mockHost(h, opts) {
   var $ = function (id) { return document.getElementById(id); };
+  $("start").disabled = true;  // enabled once the institution list has loaded
   fetch("/api/mock-hosts/" + h + "/institutions").then(function (r) { return r.json(); }).then(function (list) {
     $("inst").innerHTML = list.map(function (i) {
       return '<option value="' + i.id + '"' + (i.id === opts.defaultInst ? " selected" : "") + ">" + i.id + " - " + i.name + "</option>";
     }).join("");
+    $("start").disabled = false;
   });
   var appId = null, ref = null, saved = null;
   try { saved = JSON.parse(sessionStorage.getItem("pramaan-" + h) || "null"); } catch (e) { saved = null; }
@@ -29,6 +31,7 @@ function mockHost(h, opts) {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ institution_id: $("inst").value, external_ref: ref, form: opts.form() })
     }).then(function (r) { return r.json(); }).then(function (j) {
+      if (!j.token) { $("start").disabled = false; alert("Could not start: " + (j.detail || "unknown error")); return; }
       appId = j.application_id;
       try { sessionStorage.setItem("pramaan-" + h, JSON.stringify({ appId: appId, tok: j.token, ref: ref })); } catch (e) {}
       $("ref").textContent = ref;

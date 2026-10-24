@@ -12,6 +12,8 @@ import urllib.request
 import pytest
 from playwright.sync_api import expect, sync_playwright
 
+expect.set_options(timeout=20_000)  # cold starts on the hosted build
+
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 BASE = os.environ.get("E2E_BASE", "http://localhost:5180")
 API = os.environ.get("E2E_API", "http://127.0.0.1:8010")
