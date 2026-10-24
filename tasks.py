@@ -4,6 +4,7 @@
   seed     load demo data (+ sample files)          demo    up + seed + print the demo URLs
   test     unit/integration tests                   e2e     Playwright acceptance tests (needs `up`)
   eval     evaluation report -> docs/EVAL.md        probe   GPU/model probe -> docs/VERSIONS.md
+  eval-real  score real files in realdata/ against realdata/truth.csv (offline)
   down     stop servers started by `up`             cron    run nightly jobs once
 Use MODE=FULL (env or .env) for GPU models; default is LITE."""
 import base64
@@ -115,6 +116,12 @@ def eval_():
     sys.exit(sh([PY, "-m", "pramaan.evaluate", "--report", "docs/EVAL.md"]))
 
 
+def eval_real():
+    """Scores PRAMAAN on real, permitted files in realdata/ (offline, nothing leaves this machine)."""
+    load_env()
+    sys.exit(sh([PY, "-m", "pramaan.evaluate_real"], env={k: v for k, v in os.environ.items() if k not in ("MONGODB_URI", "GROQ_KEY", "SMTP_HOST")}))
+
+
 def probe():
     sys.exit(sh([PY, "scripts/gpu_probe.py", "--load"]))
 
@@ -125,7 +132,7 @@ def cron():
     print(http("GET", "http://127.0.0.1:8010/api/cron/daily", tok))
 
 
-TARGETS = {"secrets": secrets_, "up": up, "down": down, "seed": seed, "demo": demo, "test": test, "e2e": e2e, "eval": eval_,
+TARGETS = {"secrets": secrets_, "up": up, "down": down, "seed": seed, "demo": demo, "test": test, "e2e": e2e, "eval": eval_, "eval-real": eval_real,
            "probe": probe, "cron": cron}
 
 if __name__ == "__main__":

@@ -92,7 +92,7 @@ All third-party models are referenced in code and UI by **role**, not brand. Exa
 
 ### 2.3 Constraints
 - C1: Zero cost. Open-source, self-hosted, no paid APIs.
-- C2: Synthetic or anonymised data only.
+- C2: Authorised, anonymised or synthetic data (as the PS allows). Real documents and photos from our own college are allowed with permission. They live only in the gitignored local folder realdata/, are never committed, published or sent to any external service, and personal IDs and phone numbers are masked. Synthetic data remains for forgery tests and large-scale metrics. Mock portals must not use AICTE or other government logos or branding. (Amended 24 Oct 2026; see DECISIONS.md #24.)
 - C3: No access to restricted government databases. All external sources go through mock adapters.
 - C4: AI outputs are advisory. An adverse action requires a recorded human review (enforced in code).
 - C5: All rules are configurable. No regulatory threshold may be hard-coded in Python.

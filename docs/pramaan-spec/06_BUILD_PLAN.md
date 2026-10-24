@@ -157,6 +157,6 @@ Build vertically: each phase ends with something runnable and demoable. Do not s
 ## Working agreements for the build
 - Never hard-code regulatory values in code. They go in rule packs, marked `demo_value: true`.
 - Never fabricate metrics. If a target isn't met, report the real number and the reason in `PROGRESS.md`.
-- Never use real government logos, real institution names or real people's data.
+- Never use government logos or branding. Real documents and photos from our own college are allowed with permission. They live only in the gitignored local folder realdata/, are never committed, published or sent to any external service, and personal IDs and phone numbers are masked. Synthetic data remains for forgery tests and large-scale metrics. Mock portals must not use AICTE or other government logos or branding. (Amended 24 Oct 2026.)
 - Every new check needs: a rule or detector ID, a flag code with severity in the rule pack, evidence, a unit test and a synthetic test case.
 - Keep FULL/LITE parity: every feature either works in LITE or degrades to `MANUAL_REVIEW` with a clear reason.

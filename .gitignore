@@ -11,3 +11,7 @@ private/
 .env*
 .pids.json
 server.log
+realdata/*
+!realdata/README.md
+!realdata/truth.example.csv
+docs/EVAL-REAL.md

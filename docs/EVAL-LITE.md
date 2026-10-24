@@ -1,6 +1,6 @@
 # Evaluation report (LITE mode)
 
-Run `EVAL-59DB5366` at 2026-10-24T13:17 UTC, 6 samples per class, 401.3 s.
+Run `EVAL-E3BC057F` at 2026-10-24T15:50 UTC, 6 samples per class, 452.9 s.
 All material is freshly generated synthetic data with known answers. Numbers are as measured.
 
 | Metric | Value |
@@ -20,7 +20,7 @@ All material is freshly generated synthetic data with known answers. Numbers are
 | Room-type accuracy | n/a |
 | Walkthrough video count MAE (best frame) | 1.0 over 3 videos |
 | Floor-plan area error (vector plans) | 0.0% over 6 plans |
-| Avg processing time | 2041 ms/app, 255 ms/doc |
+| Avg processing time | 2014 ms/app, 252 ms/doc |
 | Alert delay | 0.0 ms (Alerts are raised in the same run that finds the condition; delay is measured in-process.) |
 | Estimated manual effort reduction | 85.0% (assumes 6.0 min/doc baseline, 2.0 min/flag) |
 

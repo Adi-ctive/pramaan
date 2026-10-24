@@ -62,8 +62,7 @@ CODING RULES
   <document_data> envelope; any agent failure falls back to the deterministic pipeline.
 - Fail soft: a crashing check yields a MANUAL_REVIEW flag with the error, never a failed report.
 - Security controls in 05_SECURITY.md are part of the build, not optional.
-- Never use real government logos, real institution names, or real personal data. Mock portals
-  are labelled "(mock)".
+- Never use government logos or branding. Mock portals are labelled "(mock)". Real documents and photos from our own college are allowed with permission. They live only in the gitignored local folder realdata/, are never committed, published or sent to any external service, and personal IDs and phone numbers are masked. Synthetic data remains for forgery tests and large-scale metrics. Mock portals must not use AICTE or other government logos or branding. (Amended 24 Oct 2026.)
 - Never fabricate results or metrics. Report real measured numbers, including bad ones.
 - Write tests alongside code (pytest, vitest, Playwright). Keep `make test` green.
 - Pin dependency versions; record them in docs/VERSIONS.md.

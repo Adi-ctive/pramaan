@@ -13,7 +13,9 @@ Live: https://pramaan-sih26.vercel.app (Vercel project "pramaan", project domain
 - No regulatory numbers in code: rule packs in rulepacks/*.yaml, marked demo_value: true.
 - Severity only from the rule pack. Anomaly wording: "indicator, requires verification", never forged/fake.
 - Never fabricate metrics. Evaluation shows measured numbers only.
-- Fictional issuers and institutions only, all "(mock)". No real logos, names or personal data.
+- Demo issuers and institutions are fictional and marked "(mock)". No government logos or branding.
+- Real college documents and photos: allowed with permission, only in gitignored realdata/, never committed, published or
+  sent to any external service, personal IDs and phone numbers masked. Score them with `python tasks.py eval-real`.
 - Every check: rule/detector id, flag code with severity, evidence, test.
 - Failing check becomes a CHECK_ERROR flag, never a failed report.
 - Document text reaches an LLM only inside <document_data>.

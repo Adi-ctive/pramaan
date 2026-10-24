@@ -1,0 +1,8 @@
+file,doc_type,field,expected,note
+fire_noc.pdf,FIRE_NOC,doc_type,FIRE_NOC,
+fire_noc.pdf,FIRE_NOC,ref_no,FS/MP/2025/12345,as printed
+fire_noc.pdf,FIRE_NOC,valid_to,31-03-2027,
+fire_noc.pdf,FIRE_NOC,addressee,Our College Education Society,
+lab1_photo1.jpg,INFRA_PHOTOS,computer_count,28,counted by hand
+ground_floor_plan.pdf,FLOOR_PLAN,area:COMPUTER_LAB_1,72,from the architect's drawing
+old_fire_noc.pdf,FIRE_NOC,expect_flag,DOC_EXPIRED,
