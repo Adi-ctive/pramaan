@@ -106,17 +106,17 @@ def extract_fields(pdf, pages, spec):
 
 
 def read_qr(pdf):
-    import cv2
-    det = cv2.QRCodeDetector()
+    import zxingcpp
     for i in range(len(pdf)):
-        img = np.array(render_page(pdf, i, scale=3))
-        val, pts, _ = det.detectAndDecode(img)
-        if val:
-            h, w = img.shape[:2]
-            p = pts[0]
-            bbox = [float(p[:, 0].min() / w), float(p[:, 1].min() / h),
-                    float((p[:, 0].max() - p[:, 0].min()) / w), float((p[:, 1].max() - p[:, 1].min()) / h)]
-            return {"payload": val, "page": i, "bbox": [round(x, 4) for x in bbox]}
+        img = render_page(pdf, i, scale=3)
+        for r in zxingcpp.read_barcodes(img):
+            if r.format == zxingcpp.BarcodeFormat.QRCode:
+                p = r.position
+                xs = [p.top_left.x, p.top_right.x, p.bottom_left.x, p.bottom_right.x]
+                ys = [p.top_left.y, p.top_right.y, p.bottom_left.y, p.bottom_right.y]
+                w, h = img.size
+                bbox = [min(xs) / w, min(ys) / h, (max(xs) - min(xs)) / w, (max(ys) - min(ys)) / h]
+                return {"payload": r.text, "page": i, "bbox": [round(v, 4) for v in bbox]}
     return None
 
 

@@ -181,12 +181,12 @@ def quick_check(doc_id, pack, slot):
         if vt and vt < now().date().isoformat():
             return {"level": "warn", "text": f"Looks like a {tax[slot]['label']} - valid until {vt} - expired"}
         return {"level": "ok", "text": f"Looks like a {tax[slot]['label']}" + (f" - valid until {vt}" if vt else "")}
-    import cv2
     import numpy as np
     img = extract.load_image(data).convert("L")
     if img.width < 640:
         return {"level": "warn", "text": "Image resolution is low - please upload a clearer photo"}
-    var = cv2.Laplacian(np.array(img), cv2.CV_64F).var()
+    a = np.array(img, dtype=np.float32)
+    var = (a[1:-1, :-2] + a[1:-1, 2:] + a[:-2, 1:-1] + a[2:, 1:-1] - 4 * a[1:-1, 1:-1]).var()
     if var < 20:
         return {"level": "warn", "text": "Image is blurry - please upload a clearer photo"}
     return {"level": "ok", "text": "Photo received"}

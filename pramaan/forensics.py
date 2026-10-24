@@ -3,7 +3,6 @@ Results are indicators that require verification, never proof."""
 import io
 import re
 
-import cv2
 import numpy as np
 from PIL import Image
 
@@ -14,10 +13,38 @@ def _gray(img):
     return np.array(img.convert("L"), dtype=np.float32)
 
 
+def _median3(g):
+    p = np.pad(g, 1, mode="edge")
+    h, w = g.shape
+    return np.median(np.stack([p[i:i + h, j:j + w] for i in range(3) for j in range(3)]), axis=0)
+
+
+def label(mask):
+    """4-connected components of a small boolean grid. Returns list of (area, x, y, w, h)."""
+    seen = np.zeros_like(mask, dtype=bool)
+    H, W = mask.shape
+    out = []
+    for y0, x0 in zip(*np.nonzero(mask)):
+        if seen[y0, x0]:
+            continue
+        stack, seen[y0, x0] = [(y0, x0)], True
+        ys, xs = [], []
+        while stack:
+            y, x = stack.pop()
+            ys.append(y)
+            xs.append(x)
+            for ny, nx in ((y + 1, x), (y - 1, x), (y, x + 1), (y, x - 1)):
+                if 0 <= ny < H and 0 <= nx < W and mask[ny, nx] and not seen[ny, nx]:
+                    seen[ny, nx] = True
+                    stack.append((ny, nx))
+        out.append((len(ys), min(xs), min(ys), max(xs) - min(xs) + 1, max(ys) - min(ys) + 1))
+    return out
+
+
 def noise_map(img, block=16):
     """Block std-dev of the high-pass residual, relative to the image median. Pasted clean patches stand out."""
     g = _gray(img)
-    res = g - cv2.medianBlur(g.astype(np.uint8), 3).astype(np.float32)
+    res = g - _median3(g)
     h, w = (g.shape[0] // block) * block, (g.shape[1] // block) * block
     r = res[:h, :w].reshape(h // block, block, w // block, block)
     std = r.std(axis=(1, 3))
@@ -27,33 +54,35 @@ def noise_map(img, block=16):
 
 def noise_check(img, threshold=0.65):
     ratio, block = noise_map(img)
-    mask = ((ratio < 0.35) | (ratio > 3.0)).astype(np.uint8)
-    n, lab, stats, _ = cv2.connectedComponentsWithStats(mask, connectivity=8)
-    best = None
-    for i in range(1, n):
-        if best is None or stats[i, cv2.CC_STAT_AREA] > stats[best, cv2.CC_STAT_AREA]:
-            best = i
-    area = int(stats[best, cv2.CC_STAT_AREA]) if best else 0
+    comps = label((ratio < 0.35) | (ratio > 3.0))
+    best = max(comps, default=None)
+    area = best[0] if best else 0
     score = round(min(1.0, area / 12), 3)
     region = None
     if best:
-        x, y, w, h = stats[best, :4]
         H, W = ratio.shape
-        region = [round(x / W, 4), round(y / H, 4), round(w / W, 4), round(h / H, 4)]
-    return {"score": score, "suspicious": score >= threshold, "region": region, "blocks": area}
+        _, x, y, w, h = best
+        region = [round(float(x) / W, 4), round(float(y) / H, 4), round(float(w) / W, 4), round(float(h) / H, 4)]
+    return {"score": score, "suspicious": score >= threshold, "region": region, "blocks": int(area)}
+
+
+def _jet(v):
+    r = np.clip(1.5 - np.abs(4 * v - 3), 0, 1)
+    g = np.clip(1.5 - np.abs(4 * v - 2), 0, 1)
+    b = np.clip(1.5 - np.abs(4 * v - 1), 0, 1)
+    return (np.stack([r, g, b], -1) * 255).astype(np.uint8)
 
 
 def heatmap_png(img):
     ratio, block = noise_map(img)
     dev = np.clip(np.abs(np.log(np.maximum(ratio, 1e-3))) / 2.0, 0, 1)
-    hm = cv2.applyColorMap((dev * 255).astype(np.uint8), cv2.COLORMAP_JET)
-    hm = cv2.resize(hm, (img.width, img.height), interpolation=cv2.INTER_NEAREST)
-    base = cv2.cvtColor(np.array(img.convert("RGB")), cv2.COLOR_RGB2BGR)
-    out = cv2.addWeighted(base, 0.55, hm, 0.45, 0)
-    if out.shape[1] > 1100:
-        out = cv2.resize(out, (1100, int(out.shape[0] * 1100 / out.shape[1])))
-    ok, buf = cv2.imencode(".png", out)
-    return buf.tobytes()
+    hm = Image.fromarray(_jet(dev)).resize((img.width, img.height), Image.NEAREST)
+    out = Image.blend(img.convert("RGB"), hm, 0.45)
+    if out.width > 1100:
+        out = out.resize((1100, int(out.height * 1100 / out.width)))
+    b = io.BytesIO()
+    out.save(b, "PNG")
+    return b.getvalue()
 
 
 def ela_score(img, q=90):
@@ -67,27 +96,38 @@ def ela_score(img, q=90):
     return round(float(np.percentile(blocks, 99.5) / med), 3)
 
 
-def copy_move(img, min_shift=40):
-    """Self-matching ORB keypoints displaced by a consistent vector suggest a cloned region."""
-    g = np.array(img.convert("L"))
-    orb = cv2.ORB_create(3000)
-    kp, des = orb.detectAndCompute(g, None)
-    if des is None or len(kp) < 10:
+def copy_move(img, block=16, step=2, min_shift=40, quant=6, min_pairs=500):
+    """Overlapping-block matching: identical textured blocks repeated at one consistent offset suggest a cloned region."""
+    g = _gray(img).astype(np.float64)
+    ii = np.pad(g, ((1, 0), (1, 0))).cumsum(0).cumsum(1)
+    ii2 = np.pad(g * g, ((1, 0), (1, 0))).cumsum(0).cumsum(1)
+    ys = np.arange(0, g.shape[0] - block, step)
+    xs = np.arange(0, g.shape[1] - block, step)
+    Y, X = np.meshgrid(ys, xs, indexing="ij")
+    Y, X = Y.ravel(), X.ravel()
+
+    def box(I, y, x, s):
+        return I[y + s, x + s] - I[y, x + s] - I[y + s, x] + I[y, x]
+    hb = block // 2
+    q = np.stack([box(ii, Y + dy, X + dx, hb) for dy in (0, hb) for dx in (0, hb)], 1) / (hb * hb)
+    var = box(ii2, Y, X, block) / block ** 2 - (box(ii, Y, X, block) / block ** 2) ** 2
+    keep = var > 300
+    if keep.sum() < 10:
         return {"pairs": 0, "suspicious": False}
-    m = cv2.BFMatcher(cv2.NORM_HAMMING).knnMatch(des, des, k=3)
-    vecs = []
-    for cand in m:
-        for c in cand[1:]:
-            if c.distance < 20:
-                p, q = np.array(kp[c.queryIdx].pt), np.array(kp[c.trainIdx].pt)
-                if np.linalg.norm(p - q) > min_shift:
-                    v = q - p if (q - p)[0] >= 0 else p - q
-                    vecs.append(tuple((v / 4).round()))
-    if not vecs:
+    feat = np.round(q[keep] / quant)
+    Yk, Xk = Y[keep], X[keep]
+    order = np.lexsort(feat.T[::-1])
+    f, Ys, Xs = feat[order], Yk[order], Xk[order]
+    same = np.all(f[1:] == f[:-1], axis=1)
+    dy, dx = (Ys[1:] - Ys[:-1])[same], (Xs[1:] - Xs[:-1])[same]
+    far = np.hypot(dy, dx) > min_shift
+    if not far.any():
         return {"pairs": 0, "suspicious": False}
-    vals, counts = np.unique(np.array(vecs), axis=0, return_counts=True)
+    sgn = np.where(dy[far] < 0, -1, 1)
+    vecs = np.stack([dy[far] * sgn, dx[far] * sgn], 1)
+    _, counts = np.unique(vecs, axis=0, return_counts=True)
     top = int(counts.max())
-    return {"pairs": top, "suspicious": top >= 12}
+    return {"pairs": top, "suspicious": top >= min_pairs}
 
 
 def pdf_structure(data, meta):

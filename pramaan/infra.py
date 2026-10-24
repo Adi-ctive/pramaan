@@ -9,7 +9,6 @@ import os
 import re
 from datetime import datetime
 
-import cv2
 import httpx
 import numpy as np
 
@@ -45,14 +44,13 @@ def km(a_lat, a_lon, b_lat, b_lon):
 
 
 def classical_count(img):
-    g = np.array(img.convert("L"))
-    _, th = cv2.threshold(g, 60, 255, cv2.THRESH_BINARY_INV)
-    cnts, _ = cv2.findContours(th, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    from .forensics import label
+    small = img.convert("L").resize((img.width // 2, img.height // 2))
+    g = np.array(small)
     area = g.shape[0] * g.shape[1]
     n = 0
-    for c in cnts:
-        x, y, w, h = cv2.boundingRect(c)
-        if 0.0008 * area < w * h < 0.03 * area and 1.1 < w / max(h, 1) < 2.2 and cv2.contourArea(c) > 0.8 * w * h:
+    for a, x, y, w, h in label(g < 60):
+        if 0.0008 * area < w * h < 0.03 * area and 1.1 < w / max(h, 1) < 2.2 and a > 0.8 * w * h:
             n += 1
     return n
 

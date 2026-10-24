@@ -7,12 +7,21 @@
     "api/index.py": {
       "maxDuration": 60,
       "memory": 2048,
-      "includeFiles": "{pramaan/**,rulepacks/**}"
+      "includeFiles": "{pramaan/**,rulepacks/**}",
+      "excludeFiles": "{node_modules/**,dist/**,public/**,src/**,tests/**,docs/**,.venv/**}"
     }
   },
   "rewrites": [
-    { "source": "/api/(.*)", "destination": "/api/index" },
-    { "source": "/((?!api/|widget/|host-a|host-b|samples/|assets/).*)", "destination": "/index.html" }
+    {
+      "source": "/api/(.*)",
+      "destination": "/api/index"
+    },
+    {
+      "source": "/((?!api/|widget/|host-a|host-b|samples/|assets/).*)",
+      "destination": "/index.html"
+    }
   ],
-  "regions": ["bom1"]
+  "regions": [
+    "bom1"
+  ]
 }
