@@ -2,6 +2,7 @@
 (GOLDEN-A, PROBLEM-A, GOLDEN-B, PROBLEM-B, plus a donor application whose lab photo PROBLEM-A reuses).
 Usage: python -m pramaan.seed [--samples public/samples]"""
 import base64
+import hashlib
 import os
 import secrets
 import sys
@@ -205,7 +206,8 @@ def reset(samples_dir=None, password=None):
         db.rule_packs.insert_one({"key": p["key"], "version": p["version"], "status": "ACTIVE", "yaml": text, "created": now().isoformat()})
     cx = Ctx()
     for iid, name, types, down in ISSUERS:
-        k = Ed25519PrivateKey.generate()
+        # deterministic demo keys so the published sample files verify against any fresh seed
+        k = Ed25519PrivateKey.from_private_bytes(hashlib.sha256((os.environ.get("ISSUER_KEY_SEED", "pramaan-demo-issuers") + iid).encode()).digest())
         cx.keys[iid] = k
         pub = k.public_key().public_bytes(serialization.Encoding.Raw, serialization.PublicFormat.Raw)
         db.issuers.insert_one({"id": iid, "name": name, "doc_types": types, "public_key": base64.urlsafe_b64encode(pub).decode().rstrip("="),
