@@ -61,6 +61,35 @@ class OCRModel:
         return lines
 
 
+    def read_hindi(self, img):
+        """Second OCR pass for Devanagari pages (EasyOCR hi+en). Same line format as read()."""
+        if MODE != "FULL":
+            return None
+        m = _load("easyocr", lambda: __import__("easyocr").Reader(["hi", "en"], gpu=_device() == "cuda", verbose=False))
+        if m is None:
+            return None
+        W, H = img.size
+        lines = []
+        for box, text, conf in m.readtext(np.array(img.convert("RGB")), paragraph=False):
+            xs, ys = [p[0] for p in box], [p[1] for p in box]
+            bbox = [round(min(xs) / W, 4), round(min(ys) / H, 4), round((max(xs) - min(xs)) / W, 4), round((max(ys) - min(ys)) / H, 4)]
+            lines.append({"text": text, "conf": round(float(conf), 3), "bbox": bbox, "words": [{"text": text, "conf": float(conf), "bbox": bbox}]})
+        lines.sort(key=lambda l: (round(l["bbox"][1], 2), l["bbox"][0]))
+        # join fragments that sit on the same text line
+        merged = []
+        for l in lines:
+            if merged and abs(merged[-1]["bbox"][1] - l["bbox"][1]) < 0.008 and l["bbox"][0] > merged[-1]["bbox"][0]:
+                m_ = merged[-1]
+                x1 = max(m_["bbox"][0] + m_["bbox"][2], l["bbox"][0] + l["bbox"][2])
+                m_["text"] += " " + l["text"]
+                m_["conf"] = round(min(m_["conf"], l["conf"]), 3)
+                m_["bbox"][2] = round(x1 - m_["bbox"][0], 4)
+                m_["words"] += l["words"]
+            else:
+                merged.append({**l, "bbox": list(l["bbox"])})
+        return merged
+
+
 # ---------------- Handwriting Model
 class HandwritingModel:
     role = "Handwriting Model"
@@ -223,10 +252,10 @@ ocr, htr, detector, scene, llm = OCRModel(), HandwritingModel(), ObjectDetector(
 
 def status():
     out = {"mode": MODE, "device": _device() if MODE == "FULL" else "cpu"}
-    names = {"OCR Model": "doctr", "Handwriting Model": "trocr", "Object Detector": "gdino", "Scene Classifier": "clip", "Reasoning LLM": "llm"}
+    names = {"OCR Model": "doctr", "Hindi OCR Model": "easyocr", "Handwriting Model": "trocr", "Object Detector": "gdino", "Scene Classifier": "clip", "Reasoning LLM": "llm"}
     for role, key in names.items():
         if MODE != "FULL":
-            lite = {"OCR Model": "PDF text layer only", "Handwriting Model": "off (manual review)", "Object Detector": "classical counter",
+            lite = {"Hindi OCR Model": "PDF text layer only", "OCR Model": "PDF text layer only", "Handwriting Model": "off (manual review)", "Object Detector": "classical counter",
                     "Scene Classifier": "off", "Reasoning LLM": "template (NullLLM)" if not os.environ.get("GROQ_KEY") else "hosted LLM"}
             out[role] = lite[role]
         else:

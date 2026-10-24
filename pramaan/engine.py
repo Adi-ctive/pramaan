@@ -59,7 +59,17 @@ def process_doc(doc, pack, app):
     is_pdf = doc["filename"].lower().endswith(".pdf")
     if doc["filename"].lower().endswith(VIDEO):
         res.update(type=doc["slot"], type_conf=0, scanned=False, media="video")
-        res["stages"].append({"stage": "video", "ms": 0, "status": "skipped", "note": "frame sampling not available in this deployment"})
+        frames = stage("video_frames", lambda: extract.video_frames(data)) if doc["slot"] == "INFRA_PHOTOS" else None
+        if not frames:
+            return res
+        res["frames"] = len(frames)
+        spec = (pack.get("infrastructure", {}).get("facilities", {}) or {}).get((doc.get("facility") or "").rsplit("_", 1)[0])
+        for k, im in enumerate(frames):
+            res["pages"].append(put_blob(extract.to_png(im), "jpeg"))
+            entry = {"hash": forensics.dhash(im), "frame": k}
+            if spec:
+                entry["count"] = stage("object_count", lambda: providers.detector.count(im, spec["count_object"]))
+            res["images"].append(entry)
         return res
     if is_pdf:
         pdf = stage("render", lambda: extract.open_pdf(data))
@@ -91,6 +101,10 @@ def process_doc(doc, pack, app):
                     res["injection"] = hits
         if not scanned:
             res["regions"] = stage("regions", lambda: detect_regions(pdf, res.get("qr")))
+            if (pack["taxonomy"].get(doc["slot"]) or {}).get("tables"):
+                res["tables"] = stage("tables", lambda: extract.extract_tables(data)) or []
+            if (pack["taxonomy"].get(doc["slot"]) or {}).get("kind") == "floor_plan":
+                res["floor_plan"] = stage("floor_plan", lambda: extract.floor_plan(data))
         if b"/ByteRange" in data or "pdf_sig" in (pack["taxonomy"].get(doc["slot"]) or {}).get("verification", []):
             res["pdf_sig"] = stage("pdf_signature", lambda: verify.check_pdf_sig(data))
         if "qr" in (pack["taxonomy"].get(doc["slot"]) or {}).get("verification", []):
@@ -158,17 +172,28 @@ def read_scanned(img, pack, slot, th):
     lines = providers.ocr.read(img)
     if lines is None:
         return None
+    spec0 = pack["taxonomy"].get(slot) or {}
+    hindi_labels = [a for f in (spec0.get("fields") or {}).values() for a in f.get("alt_anchors") or [] if re.search(r"[ऀ-ॿ]", a)]
+    english_found = any(f["anchor"].lower() in " ".join(l["text"].lower() for l in lines) for f in (spec0.get("fields") or {}).values())
+    if hindi_labels and not english_found:
+        hl = providers.ocr.read_hindi(img)
+        if hl:
+            lines = hl
     text = "\n".join(l["text"] for l in lines)
     t, conf = extract.classify(text, pack["taxonomy"])
     spec = pack["taxonomy"].get(slot) or {}
     fields, htr = {}, []
     W, H = img.size
     for fname, fs in (spec.get("fields") or {}).items():
-        anc = fs["anchor"].lower()
-        ln = next((l for l in lines if l["text"].lower().startswith(anc) or anc + ":" in l["text"].lower()), None) or             next((l for l in lines if anc in l["text"].lower()), None)
+        ln = None
+        for anc in [fs["anchor"].lower()] + [x.lower() for x in fs.get("alt_anchors") or []]:
+            ln = next((l for l in lines if l["text"].lower().startswith(anc) or anc + ":" in l["text"].lower()), None) or                 next((l for l in lines if anc in l["text"].lower()), None)
+            if ln:
+                break
         if not ln:
             continue
-        raw = re.split(re.escape(fs["anchor"]) + r"\s*:?", ln["text"], flags=re.I)[-1].strip()
+        hit = next(a for a in [fs["anchor"]] + list(fs.get("alt_anchors") or []) if a.lower() in ln["text"].lower())
+        raw = re.split(re.escape(hit) + r"\s*[:ः]?", ln["text"], flags=re.I)[-1].strip().lstrip(":ः ").strip()
         c, band = ln["conf"], ln["bbox"]
         if not raw:
             # value written beside the label: nearest OCR line to the right that overlaps vertically
@@ -278,8 +303,20 @@ class Flags:
             "advisory_note": ADVISORY, "fingerprint": f"{code}|{rule_id}|{doc_id}|{key}"})
 
 
+def _translit(s):
+    if re.search(r"[\u0900-\u097F]", s):
+        from indic_transliteration import sanscript
+        s = sanscript.transliterate(s, sanscript.DEVANAGARI, sanscript.ITRANS)
+    return s
+
+
+def _skeleton(s):
+    """Consonant skeleton, so 'narmadA vidyA TrasTa' and 'Narmada Vidya Trust' compare equal."""
+    return " ".join(re.sub(r"[aeiou]", "", w) or w for w in _norm_name(s).split())
+
+
 def _norm_name(s):
-    s = s.lower().replace("&", " and ")
+    s = _translit(s).lower().replace("&", " and ")
     s = re.sub(r"\b(the|of)\b", " ", s)
     return re.sub(r"[^a-z0-9 ]", " ", s)
 
@@ -361,14 +398,16 @@ def run(app_id, changed=None, actor="system", pack_override=None, dry=False, age
                 F.add("DOC_MISSING", "COMPLETENESS", f"{lbl} not uploaded", f"Category {app['category']} requires slot {s}.",
                       [], rule_id=f"{app['category']}.required_slots", key=s, expected="document present", observed="missing",
                       action=f"Upload the {lbl}")
+        for v in docs:
+            if v["result"].get("media") == "video" and not v["result"].get("frames"):
+                F.add("MEDIA_NOT_ANALYSED", "EXTRACTION", f"{v['filename']}: video not analysed automatically",
+                      "Video frame sampling needs ffmpeg, which this deployment does not include (local builds analyse videos). An officer should view the video.",
+                      [{"type": "metadata", "document_id": v["id"], "key": "file", "value": v["filename"]}], doc_id=v["id"], conf=0.0)
         for s, ds in by_slot.items():
             d = ds[0]
             r = d["result"]
             spec = pack["taxonomy"].get(s, {})
             if r.get("media") == "video":
-                F.add("MEDIA_NOT_ANALYSED", "EXTRACTION", f"{spec.get('label', s)}: video not analysed automatically",
-                      "Frame sampling is not available in this deployment. An officer should view the video.",
-                      [{"type": "metadata", "document_id": d["id"], "key": "file", "value": d["filename"]}], doc_id=d["id"], conf=0.0)
                 continue
             if r.get("ocr_used"):
                 for fname, f in r.get("fields", {}).items():
@@ -384,6 +423,10 @@ def run(app_id, changed=None, actor="system", pack_override=None, dry=False, age
                       expected=f"confidence >= {pack['thresholds'].get('htr_min_conf')}", observed="0.0", conf=0.0,
                       action="Officer to read the document", detector="Handwriting Model")
                 continue
+            if spec.get("kind") == "floor_plan" and not r.get("floor_plan"):
+                F.add("FLOOR_PLAN_NOT_MEASURED", "INFRASTRUCTURE", "Floor plan could not be measured",
+                      "Areas are measured from vector floor plans with a printed scale. This one is an image or has no scale. Officer to review.",
+                      [{"type": "region", "document_id": d["id"], "page": 0, "bbox": [0, 0, 1, 1]}], doc_id=d["id"], conf=0.0, detector="Floor-plan reader")
             for reg in (spec.get("requires_regions") or []) if "regions" in r else []:
                 if reg not in (r.get("regions") or {}):
                     F.add("REQUIRED_REGION_MISSING", "COMPLETENESS", f"{spec.get('label', s)}: no {reg} found",
@@ -429,6 +472,46 @@ def run(app_id, changed=None, actor="system", pack_override=None, dry=False, age
                           f"Valid-to date {f['value']} is before the submission date {a['submitted_on']} (rule {rule['id']}).",
                           [_fe(d, rule["field"], f)], rule_id=rule["id"], doc_id=d["id"], expected="valid_to >= submission date",
                           observed=f["value"], action=rule.get("action"), conf=f.get("conf", 0.9))
+            elif k == "table_sum":
+                d = (by_slot.get(rule["applies_to"]) or [None])[0]
+                if not d or not d["result"].get("tables"):
+                    continue
+                rows = d["result"]["tables"][0]["rows"]
+                nums = [(r_[0], extract.norm_number(r_[-1])) for r_ in rows[1:] if extract.norm_number(r_[-1] or "") is not None]
+                items = [v for lbl, v in nums if "total" not in lbl.lower()]
+                total = next((v for lbl, v in nums if "total" in lbl.lower()), None)
+                stated = (d["result"]["fields"].get(rule["field"]) or {}).get("value")
+                s_items = round(sum(items), 2)
+                if items and ((total is not None and abs(s_items - total) > 0.5) or (stated is not None and abs(s_items - stated) > 0.5)):
+                    F.add(rule["code"], "CONSISTENCY", f"{pack['taxonomy'][rule['applies_to']]['label']}: line items do not add up",
+                          f"Items sum to {s_items:,.0f}; table total {total if total is None else f'{total:,.0f}'}; stated amount {stated if stated is None else f'{stated:,.0f}'}.",
+                          [{"type": "table", "document_id": d["id"], "rows": rows}], rule_id=rule["id"], doc_id=d["id"],
+                          expected=f"sum of items = {stated}", observed=s_items, action=rule.get("action"), detector="Table reader")
+            elif k == "table_count":
+                d = (by_slot.get(rule["applies_to"]) or [None])[0]
+                want = rec.get(rule["record_field"])
+                if not d or not d["result"].get("tables") or want is None:
+                    continue
+                n = sum(len(t["rows"]) - 1 for t in d["result"]["tables"])
+                if abs(n - want) > want * rule.get("tolerance_pct", 0) / 100:
+                    F.add(rule["code"], "CONSISTENCY", f"{pack['taxonomy'][rule['applies_to']]['label']}: {n} listed, AICTE records show {want}",
+                          f"Rows in the faculty table ({n}) do not match the faculty count in records ({want}).",
+                          [{"type": "table", "document_id": d["id"], "rows": d["result"]["tables"][0]["rows"][:4]},
+                           {"type": "record", "adapter": "records", "key": rule["record_field"], "value": want}],
+                          rule_id=rule["id"], doc_id=d["id"], expected=want, observed=n, action=rule.get("action"), detector="Table reader")
+            elif k == "area_vs_claim":
+                d = (by_slot.get(rule["applies_to"]) or [None])[0]
+                plan = d and d["result"].get("floor_plan")
+                if not plan:
+                    continue
+                rooms = {x["label"]: x for x in plan["rooms"]}
+                for fac in a.get("facilities", []):
+                    claimed, room = fac.get(rule["claim_field"]), rooms.get(fac["id"])
+                    if claimed and room and room["area_sqm"] < claimed * (1 - rule.get("tolerance_pct", 10) / 100):
+                        F.add(rule["code"], "INFRASTRUCTURE", f"{fac['id']}: {room['area_sqm']} sq m on the floor plan, {claimed} claimed",
+                              f"Measured from the floor plan at scale {plan['scale']}. Advisory only.",
+                              [{"type": "region", "document_id": d["id"], "page": 0, "bbox": room["bbox"]}], rule_id=rule["id"], doc_id=d["id"],
+                              key=fac["id"], expected=claimed, observed=room["area_sqm"], action=rule.get("action"), detector="Floor-plan reader")
             elif k == "entity_match":
                 lv = rulepack.lookup(ctx, rule["left"])
                 if not lv:
@@ -438,6 +521,8 @@ def run(app_id, changed=None, actor="system", pack_override=None, dry=False, age
                     if not rv:
                         continue
                     score = fuzz.token_set_ratio(_norm_name(lv), _norm_name(rv)) / 100
+                    if re.search(r"[\u0900-\u097F]", lv + rv):  # one side in Devanagari: also compare consonant skeletons
+                        score = max(score, fuzz.token_set_ratio(_skeleton(lv), _skeleton(rv)) / 100)
                     if score < rule.get("threshold", 0.88):
                         ev = []
                         for path, val in ((rule["left"], lv), (rpath, rv)):
@@ -591,7 +676,9 @@ def run(app_id, changed=None, actor="system", pack_override=None, dry=False, age
                         continue
                     counted, hashes = 0, []
                     for p in ph:
-                        im = p["result"]["images"][0]
+                        if not p["result"].get("images"):
+                            continue
+                        im = max(p["result"]["images"], key=lambda x: (x.get("count") or {}).get("count", 0))  # a video counts its best frame
                         if any(forensics.hamming(im["hash"], h) <= 6 for h in hashes):
                             continue
                         hashes.append(im["hash"])
@@ -608,7 +695,7 @@ def run(app_id, changed=None, actor="system", pack_override=None, dry=False, age
                               f"Detected count is below claim minus {spec.get('tolerance_pct')}% tolerance. Advisory only.",
                               [{"type": "region", "document_id": p["id"], "page": 0, "bbox": [0, 0, 1, 1]} for p in ph],
                               rule_id=rule["id"], key=fac["id"], expected=claimed, observed=counted, action=rule.get("action"),
-                              conf=(ph[0]["result"]["images"][0].get("count") or {}).get("conf", 0.6), detector="Object Detector")
+                              conf=(((ph[0]["result"].get("images") or [{}])[0]).get("count") or {}).get("conf", 0.6), detector="Object Detector")
             if rule["kind"] == "exif_geo" and photos:
                 window = ex.get("capture_window_days", 180)
                 for p in photos:

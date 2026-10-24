@@ -57,11 +57,11 @@ taxonomy:
     verification: [pdf_sig, ref_lookup]
   AFFIDAVIT_GENERAL:
     label: "General Affidavit"
-    keywords: ["affidavit", "deponent", "solemnly affirm"]
+    keywords: ["affidavit", "deponent", "solemnly affirm", "शपथ पत्र", "शपथकर्ता"]
     fields:
-      deponent: {anchor: "Deponent", type: string, required: true}
-      society_name: {anchor: "On behalf of", type: entity_name, required: true}
-      issued_on: {anchor: "Sworn on", type: date, required: true}
+      deponent: {anchor: "Deponent", alt_anchors: ["शपथकर्ता"], type: string, required: true}
+      society_name: {anchor: "On behalf of", alt_anchors: ["संस्था का नाम"], type: entity_name, required: true}
+      issued_on: {anchor: "Sworn on", alt_anchors: ["दिनांक"], type: date, required: true}
     verification: []
   ACCREDITATION:
     label: "Accreditation Certificate"
@@ -84,6 +84,21 @@ taxonomy:
       ref_no: {anchor: "Receipt No", type: string, required: true, pattern: "^TR/\\d{4}/\\d{6}$"}
       amount: {anchor: "Amount (INR)", type: number, required: true}
       paid_on: {anchor: "Paid on", type: date, required: true}
+    tables: {line_items: {sum_to: amount}}
+    verification: []
+  FACULTY_LIST:
+    label: "Faculty List"
+    keywords: ["faculty list", "faculty members"]
+    fields:
+      institution: {anchor: "Institution", type: entity_name, required: true}
+      as_on: {anchor: "As on", type: date, required: true}
+    tables: {faculty: {min_columns: 4}}
+    verification: []
+  FLOOR_PLAN:
+    label: "Floor Plan"
+    kind: floor_plan
+    keywords: ["floor plan"]
+    fields: {}
     verification: []
   INFRA_PHOTOS:
     label: "Infrastructure photographs"
@@ -94,7 +109,8 @@ taxonomy:
 categories:
   EOA:
     label: "Extension of Approval"
-    required_slots: [SOCIETY_REG, LAND_LEASE, FIRE_NOC, BUILDING_COMPLETION, AFFIDAVIT_GENERAL, ACCREDITATION, FEE_RECEIPT, INFRA_PHOTOS]
+    required_slots: [SOCIETY_REG, LAND_LEASE, FIRE_NOC, BUILDING_COMPLETION, AFFIDAVIT_GENERAL, ACCREDITATION, FEE_RECEIPT, FACULTY_LIST, INFRA_PHOTOS]
+    optional_slots: [FLOOR_PLAN]
     conditional_slots:
       - slot: ACCREDITATION
         when: {"==": [{"var": "app.has_accredited_programmes"}, true]}
@@ -131,6 +147,9 @@ rules:
     expected: "Fee >= 150000 (demo value)"
     observed_var: "FEE_RECEIPT.amount"
     action: "Pay the balance processing fee"
+  - {id: FEE.total_matches_items, code: FEE_TOTAL_MISMATCH, kind: table_sum, applies_to: FEE_RECEIPT, table: line_items, field: amount, action: "Upload a receipt whose line items add up to the total"}
+  - {id: FACULTY.count_vs_records, code: FACULTY_COUNT_MISMATCH, kind: table_count, applies_to: FACULTY_LIST, table: faculty, record_field: faculty_count, tolerance_pct: 0, action: "Reconcile the faculty list with AICTE faculty records"}
+  - {id: AREA.vs_claim, code: AREA_SHORTFALL, kind: area_vs_claim, applies_to: FLOOR_PLAN, claim_field: claimed_area_sqm, tolerance_pct: 10, action: "Provide evidence of the claimed area; physical inspection may be required"}
   - {id: COUNT.computer_lab, code: INFRA_SHORTFALL, kind: count_vs_claim, facility_type: COMPUTER_LAB, action: "Provide additional evidence; physical inspection may be required"}
   - {id: EXIF.geo, code: EXIF_LOCATION_MISMATCH, kind: exif_geo, action: "Re-take photographs on campus with location enabled"}
 
@@ -198,13 +217,17 @@ severity:
   EXIF_MISSING: LOW
   INJECTION_INDICATOR: MEDIUM
   REQUIRED_REGION_MISSING: MEDIUM
+  FEE_TOTAL_MISMATCH: MEDIUM
+  FACULTY_COUNT_MISMATCH: HIGH
+  AREA_SHORTFALL: MEDIUM
+  FLOOR_PLAN_NOT_MEASURED: LOW
   PDF_SIGNATURE_INVALID: HIGH
   PDF_MODIFIED_AFTER_SIGNING: HIGH
   ROOM_TYPE_MISMATCH: MEDIUM
   MEDIA_NOT_ANALYSED: LOW
   CHECK_ERROR: MEDIUM
 
-institution_visible: [REQUIRED_REGION_MISSING, DOC_MISSING, DOC_EXPIRED, WRONG_DOC_TYPE, FIELD_MISSING, FORMAT_INVALID, NAME_MISMATCH, INTAKE_MISMATCH_RECORDS, FEE_SHORT, DATE_IMPLAUSIBLE, INFRA_SHORTFALL, EXIF_LOCATION_MISMATCH, EXIF_MISSING]
+institution_visible: [FEE_TOTAL_MISMATCH, FACULTY_COUNT_MISMATCH, AREA_SHORTFALL, REQUIRED_REGION_MISSING, DOC_MISSING, DOC_EXPIRED, WRONG_DOC_TYPE, FIELD_MISSING, FORMAT_INVALID, NAME_MISMATCH, INTAKE_MISMATCH_RECORDS, FEE_SHORT, DATE_IMPLAUSIBLE, INFRA_SHORTFALL, EXIF_LOCATION_MISMATCH, EXIF_MISSING]
 
 risk_weights: {HIGH: 25, MEDIUM: 10, LOW: 3, INFO: 0}
 alerts:

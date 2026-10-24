@@ -2,6 +2,7 @@
 engine, and reports measured numbers (good or bad). Usage: python -m pramaan.evaluate [--n 6] [--report docs/EVAL.md]"""
 import base64
 import io
+import os
 import random
 import sys
 import time
@@ -124,6 +125,36 @@ def handwriting(pack, n, rnd):
             "routed_to_manual": routed, "note": "OCR Model reads the handwriting first; Handwriting Model re-reads low-confidence values."}
 
 
+HINDI_NAMES = ["रमेश कुमार", "सुनीता शर्मा", "अनिल वर्मा", "प्रिया सिंह"]
+HINDI_TRUSTS = ["नर्मदा विद्या ट्रस्ट", "कावेरी शिक्षा समिति", "विंध्य शिक्षा समिति", "गोदावरी विद्या ट्रस्ट"]
+
+
+def hindi(pack, n, rnd):
+    """FULL only: Hindi affidavits rendered by Chromium, scanned with noise, read by the Hindi OCR Model."""
+    if providers.MODE != "FULL":
+        return {"hindi_cer": None}
+    try:
+        sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "scripts"))
+        from make_hindi_assets import affidavit_html, render
+    except Exception as e:
+        return {"hindi_cer": None, "hindi_note": f"renderer unavailable: {e}"}
+    errs, exact, rows = [], 0, 0
+    for k in range(n):
+        truth = {"deponent": rnd.choice(HINDI_NAMES), "society_name": rnd.choice(HINDI_TRUSTS), "issued_on": f"{rnd.randint(1, 28):02d}-{rnd.randint(1, 12):02d}-2026"}
+        _, png = render(affidavit_html(truth["deponent"], truth["society_name"], truth["issued_on"], True), out_png=True)
+        img = Image.open(io.BytesIO(png)).convert("RGB")
+        arr = np.clip(np.array(img, dtype=np.float32) + np.random.default_rng(k).normal(0, 6, (img.height, img.width, 3)), 0, 255)
+        o = engine.read_scanned(Image.fromarray(arr.astype(np.uint8)), pack, "AFFIDAVIT_GENERAL", pack["thresholds"]) or {"fields": {}}
+        for f, t in truth.items():
+            got = (o["fields"].get(f) or {}).get("raw") or ""
+            got = extract.norm_date(got) if f == "issued_on" else got
+            want = extract.norm_date(t) if f == "issued_on" else t
+            rows += 1
+            errs.append(cer(got, want))
+            exact += (got or "").strip() == want
+    return {"hindi_cer": round(float(np.mean(errs)), 4), "hindi_exact": round(exact / rows, 3), "hindi_fields": rows}
+
+
 def anomalies(pack, n):
     th = pack["thresholds"]["noise_suspicion"]
     out = {}
@@ -197,7 +228,9 @@ VARIANTS = {"clean": None, "missing document": "DOC_MISSING", "expired document"
             "intake mismatch vs records": "INTAKE_MISMATCH_RECORDS", "name mismatch across documents": "NAME_MISMATCH",
             "implausible issue date": "DATE_IMPLAUSIBLE", "bad reference-number format": "FORMAT_INVALID",
             "EXIF far from campus": "EXIF_LOCATION_MISMATCH", "reused photo across institutions": "DUPLICATE_ACROSS_INSTITUTIONS",
-            "QR payload mismatch": "QR_MISMATCH", "PDF edited after signing": "PDF_MODIFIED_AFTER_SIGNING"}
+            "QR payload mismatch": "QR_MISMATCH", "PDF edited after signing": "PDF_MODIFIED_AFTER_SIGNING",
+            "fee items do not add up": "FEE_TOTAL_MISMATCH", "faculty count vs records": "FACULTY_COUNT_MISMATCH",
+            "floor area below claim": "AREA_SHORTFALL"}
 
 
 def rule_level(pack, insts=("INST-011", "INST-003")):
@@ -214,7 +247,7 @@ def rule_level(pack, insts=("INST-011", "INST-003")):
             docs, _, _ = build_docs(cx, rec, "GOLDEN-A", 40 + j)
             docs = [list(d) for d in docs]
             form = {"institution_name": rec["name"], "society_name": rec["society_name"], "current_intake": rec["approved_intake"],
-                    "has_accredited_programmes": True, "facilities": [{"id": "COMPUTER_LAB_1", "type": "COMPUTER_LAB", "claimed_workstations": 30}]}
+                    "has_accredited_programmes": True, "facilities": [{"id": "COMPUTER_LAB_1", "type": "COMPUTER_LAB", "claimed_workstations": 30, "claimed_area_sqm": 66}]}
             slot = lambda s: next(d for d in docs if d[0] == s)
             s, nm = rec["society_name"], rec["name"]
             if v == "missing document":
@@ -256,6 +289,16 @@ def rule_level(pack, insts=("INST-011", "INST-003")):
                 acc[2] = synth.pdf_doc("Certificate of Accreditation", cx.issuer_name("ISS-NAC"),
                                        [("Certificate No", af["ref_no"]), ("Institution", nm), ("Programme", "B.Tech Computer Science and Engineering"), ("Date of issue", "01-07-2025"),
                                         ("Valid until", "30-06-2028"), ("Accrediting body", cx.issuer_name("ISS-NAC"))], qr=synth.qr_payload("ISS-NAC", cx.keys["ISS-NAC"], af))
+            elif v == "fee items do not add up":
+                slot("FEE_RECEIPT")[2] = synth.table_pdf("Fee Receipt", "Online Fee Gateway (mock)",
+                                                         [("Receipt No", f"TR/2026/{690000 + j}"), ("Received from", s), ("Amount (INR)", "1,50,000"), ("Paid on", "05-10-2026")],
+                                                         ["Item", "Amount (INR)"], [["Processing fee", "1,00,000"], ["Inspection fee", "30,000"]], ["Total", "1,50,000"])
+            elif v == "faculty count vs records":
+                rows = [[str(i + 1), f"Faculty Member {i + 1} (fictional)", "Assistant Professor", "M.Tech"] for i in range(rec["faculty_count"] - 5)]
+                slot("FACULTY_LIST")[2] = synth.table_pdf("Faculty List", f"{nm} (mock)", [("Institution", nm), ("As on", "01-10-2026")],
+                                                          ["S.No", "Name", "Designation", "Qualification"], rows, extra=["Faculty members on roll (illustrative)."])
+            elif v == "floor area below claim":
+                slot("FLOOR_PLAN")[2] = synth.floor_plan_pdf([("COMPUTER_LAB_1", 8, 6), ("CLASSROOM_1", 9, 7)], institution=nm)
             elif v == "PDF edited after signing":
                 slot("LAND_LEASE")[2] = synth.edit_after_signing(slot("LAND_LEASE")[2])
             aid = create_application("HOST-A", f"EVAL-{v}-{iid}", iid, "EOA", form, pack["key"], rec["region"])
@@ -293,6 +336,7 @@ def run_eval(n=6, quick=False):
     run = {"id": new_id("EVAL"), "created": now().isoformat(), "mode": providers.MODE, "samples_per_class": n, "providers": providers.status()}
     run["extraction"] = extraction(pack, n, rnd)
     run["extraction"].update(handwriting(pack, n, rnd))
+    run["extraction"].update(hindi(pack, n, rnd))
     run["anomaly"] = anomalies(pack, n)
     errs, rooms = [], []
     for k in range(n * 2):
@@ -303,7 +347,19 @@ def run_eval(n=6, quick=False):
         if rc:
             rooms.append(rc["label"] == "computer lab")
     det = "Object Detector (FULL, open-vocabulary)" if providers.MODE == "FULL" else "Object Detector (LITE, classical counter)"
+    verrs = []
+    for k in range(max(2, n // 2)):  # walkthrough videos: best sampled frame vs the true count
+        true_n = rnd.randint(10, 20)
+        frames = extract.video_frames(synth.lab_video(true_n, seed=1500 + k))
+        verrs.append(abs(max(providers.detector.count(f, "computer monitor")["count"] for f in frames) - true_n))
+    aerrs = []
+    for k in range(n):  # floor plans: measured vs drawn area
+        wm, hm = rnd.randint(5, 14), rnd.randint(4, 9)
+        plan = extract.floor_plan(synth.floor_plan_pdf([("COMPUTER_LAB_1", wm, hm)], scale=rnd.choice([50, 100, 200])))
+        aerrs.append(abs(plan["rooms"][0]["area_sqm"] - wm * hm) / (wm * hm))
     run["infrastructure"] = {"count_mae": round(float(np.mean(errs)), 2), "photos": len(errs), "detector": det,
+                             "video_count_mae": round(float(np.mean(verrs)), 2), "videos": len(verrs),
+                             "floor_area_error": round(float(np.mean(aerrs)), 4), "floor_plans": len(aerrs),
                              "room_type_accuracy": round(sum(rooms) / len(rooms), 3) if rooms else None}
     run["validation"] = None if quick else rule_level(pack)
 
@@ -357,7 +413,8 @@ def markdown(r):
          f"| Field exact match, scanned printed (OCR Model) | {pct(e.get('scanned_field_exact_match'))} |",
          f"| Printed CER, scanned (OCR Model) | {pct(e.get('scanned_printed_cer'))} |",
          f"| Handwriting CER | {pct(e.get('handwriting_cer'))} |",
-         f"| Handwriting exact match | {pct(e.get('handwriting_exact'))} ({e.get('handwriting_fields', 0)} fields) |"]
+         f"| Handwriting exact match | {pct(e.get('handwriting_exact'))} ({e.get('handwriting_fields', 0)} fields) |",
+         f"| Hindi scanned fields: CER / exact match | {pct(e.get('hindi_cer'))} / {pct(e.get('hindi_exact'))} ({e.get('hindi_fields', 0)} fields) |"]
     if r.get("validation"):
         L.append(f"| Validation: single-defect apps flagged exactly right | {pct(r['validation']['exact_match_rate'])} ({r['validation']['applications']} apps) |")
     L += [f"| Seeded discrepancy recall | {pct(r['discrepancies']['recall'])} ({r['discrepancies']['found']}/{r['discrepancies']['expected']}) |",
@@ -365,6 +422,8 @@ def markdown(r):
           f"| Source-verification success (golden) | {pct(r['verification']['success_rate'])} of {r['verification']['verifiable']} verifiable |",
           f"| Lab monitor count MAE | {i['count_mae']} over {i['photos']} photos ({i['detector']}) |",
           f"| Room-type accuracy | {pct(i.get('room_type_accuracy'))} |",
+          f"| Walkthrough video count MAE (best frame) | {i.get('video_count_mae')} over {i.get('videos')} videos |",
+          f"| Floor-plan area error (vector plans) | {pct(i.get('floor_area_error'))} over {i.get('floor_plans')} plans |",
           f"| Avg processing time | {r['timing']['avg_ms_per_application']} ms/app, {r['timing']['avg_ms_per_document']} ms/doc |",
           f"| Alert delay | {r['alerts']['avg_delay_ms']} ms ({r['alerts']['note']}) |",
           f"| Estimated manual effort reduction | {pct(r['effort']['estimated_reduction'])} (assumes {r['effort']['baseline_min_per_doc']} min/doc baseline, {r['effort']['officer_min_per_flag']} min/flag) |",

@@ -67,10 +67,11 @@ Live: https://pramaan-sih26.vercel.app (click "Enter as Senior Officer"). Script
 
 ## Known gaps
 
-- No Hindi OCR/HTR, no table extraction (S), no video frame analysis, no floor plans (C), no signature similarity (C).
+- Added 24 Oct (second pass): Hindi labels and Hindi OCR (FULL), transliterated name matching, tables (fee totals, faculty count), vector floor-plan areas, walkthrough video frames (local), two-step sign-in setup screen.
+- Still missing: Hindi handwriting, scanned tables, raster floor plans, video on the hosted build, signature similarity (C).
 - No Docker Compose, Redis/Celery, MinIO, Mailpit or Caddy (see DECISIONS.md for what replaces each).
-- TOTP setup has an API but no console screen yet (login does ask for the code).
+- Tests now: 26 unit/integration, 8 Playwright acceptance (local), 5 non-destructive acceptance tests on the live site.
 
 ## Where to resume
 
-Nothing is half done. Next ideas: Hindi OCR, video frames via ffmpeg, a TOTP setup screen, real team lab photos for the detector.
+Nothing is half done. Next ideas: real team lab photos and floor plans, Hindi handwriting, scanned tables.

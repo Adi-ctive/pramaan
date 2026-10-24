@@ -15,8 +15,11 @@ PROVIDERS = {"ocr": "PDF text layer (LITE)", "classifier": "Keyword classifier (
 DATE_FORMATS = ["%d-%m-%Y", "%d/%m/%Y", "%Y-%m-%d", "%d %B %Y", "%d %b %Y", "%d.%m.%Y"]
 
 
+DEV_DIGITS = str.maketrans("०१२३४५६७८९", "0123456789")
+
+
 def norm_date(s):
-    s = s.strip().rstrip(".")
+    s = s.translate(DEV_DIGITS).strip().rstrip(".")
     for f in DATE_FORMATS:
         try:
             return datetime.strptime(s, f).date().isoformat()
@@ -29,6 +32,7 @@ def norm_date(s):
 
 
 def norm_number(s):
+    s = s.translate(DEV_DIGITS)
     m = re.search(r"[\d,]+(\.\d+)?", s)
     return float(m.group(0).replace(",", "")) if m else None
 
@@ -90,9 +94,12 @@ def extract_fields(pdf, pages, spec):
     """Anchor 'Label: value' lines. Returns {field: {value, raw, page, bbox, conf}}."""
     out = {}
     for fname, fs in (spec.get("fields") or {}).items():
-        anchor = re.escape(fs["anchor"])
         for pi, txt in enumerate(pages):
-            m = re.search(anchor + r"\s*:\s*(.+)", txt)
+            m = None
+            for anc in [fs["anchor"]] + list(fs.get("alt_anchors") or []):  # English label first, then Hindi labels
+                m = re.search(re.escape(anc) + r"\s*:\s*(.+)", txt)
+                if m:
+                    break
             if not m:
                 continue
             raw = m.group(1).strip()
@@ -142,3 +149,69 @@ def to_png(img, max_w=1100):
 
 def load_image(data):
     return Image.open(io.BytesIO(data))
+
+
+# ---------------- tables (FR-DOC-06), digital PDFs
+def extract_tables(data):
+    """Tables from the text layer: [{page, rows: [[cell, ...], ...]}]."""
+    import pdfplumber
+    out = []
+    with pdfplumber.open(io.BytesIO(data)) as pdf:
+        for i, page in enumerate(pdf.pages):
+            for t in page.extract_tables():
+                rows = [[(c or "").strip() for c in r] for r in t if any((c or "").strip() for c in r)]
+                if len(rows) >= 2:
+                    out.append({"page": i, "rows": rows})
+    return out
+
+
+# ---------------- floor plans (FR-INF-06), vector PDFs
+def floor_plan(data):
+    """Rooms from a vector floor plan: rectangles with a label inside, sized with the printed 'Scale 1:N'.
+    Returns None for raster plans (scans or photos), which go to manual review."""
+    import pdfplumber
+    with pdfplumber.open(io.BytesIO(data)) as pdf:
+        page = pdf.pages[0]
+        text = page.extract_text() or ""
+        m = re.search(r"Scale\s*:?\s*1\s*:\s*(\d+)", text, re.I)
+        rects = [r for r in page.rects if r["width"] > 20 and r["height"] > 20]
+        if not m or not rects:
+            return None
+        k = 0.3528 / 1000 * int(m.group(1))  # metres per PDF point at this scale
+        words = page.extract_words()
+        rooms = []
+        for r in rects:
+            inside = [w["text"] for w in words if r["x0"] < w["x0"] and w["x1"] < r["x1"] and r["top"] < w["top"] and w["bottom"] < r["bottom"]]
+            label = next((w for w in inside if re.match(r"^[A-Z]+(_[A-Z]+)*_\d+$", w)), None)
+            if label:
+                W, H = page.width, page.height
+                rooms.append({"label": label, "area_sqm": round(r["width"] * k * r["height"] * k, 1),
+                              "bbox": [round(r["x0"] / W, 4), round(r["top"] / H, 4), round(r["width"] / W, 4), round(r["height"] / H, 4)]})
+        return {"scale": f"1:{m.group(1)}", "rooms": rooms}
+
+
+# ---------------- video (FR-DOC-12): sample frames, drop near-duplicates
+def video_frames(data, fps=1, max_frames=8):
+    import os
+    import subprocess
+    import tempfile
+
+    try:
+        import imageio_ffmpeg
+    except ImportError:  # hosted build ships without ffmpeg
+        return None
+    from PIL import Image
+    with tempfile.TemporaryDirectory() as d:
+        src = os.path.join(d, "in.mp4")
+        open(src, "wb").write(data)
+        subprocess.run([imageio_ffmpeg.get_ffmpeg_exe(), "-loglevel", "error", "-i", src, "-vf", f"fps={fps}", "-frames:v", str(max_frames),
+                        os.path.join(d, "f%02d.png")], check=True, timeout=60)
+        frames = [Image.open(os.path.join(d, f)).convert("RGB") for f in sorted(os.listdir(d)) if f.endswith(".png")]
+    from .forensics import dhash, hamming
+    keep, hashes = [], []
+    for f in frames:
+        h = dhash(f)
+        if all(hamming(h, x) > 6 for x in hashes):
+            keep.append(f)
+            hashes.append(h)
+    return keep

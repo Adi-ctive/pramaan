@@ -25,6 +25,8 @@ footer{font-size:11px;color:#64748b;text-align:center;padding:16px}a{color:#1e3a
       <div><label for="acc">Accredited programmes?</label><select id="acc"><option value="1">Yes</option><option value="0">No</option></select></div>
       <div><label for="lab1">Computer Lab 1 - claimed workstations</label><input id="lab1" type="number" value="30"></div>
       <div><label for="lab2">Computer Lab 2 - claimed workstations (0 if none)</label><input id="lab2" type="number" value="0"></div>
+      <div><label for="area1">Computer Lab 1 - claimed area (sq m)</label><input id="area1" type="number" value="66"></div>
+      <div><label for="area2">Computer Lab 2 - claimed area (sq m)</label><input id="area2" type="number" value="40"></div>
     </div>
     <button id="start">Create application and continue</button>
   </section>
@@ -40,9 +42,9 @@ footer{font-size:11px;color:#64748b;text-align:center;padding:16px}a{color:#1e3a
 <script src="/widget/v1/pramaan.js"></script><script src="/widget/v1/mockhost.js"></script>
 <script>
 var ui = mockHost("a", { docStep: 3, defaultInst: "INST-011", form: function () {
-  var f = [{ id: "COMPUTER_LAB_1", type: "COMPUTER_LAB", claimed_workstations: +document.getElementById("lab1").value }];
-  var l2 = +document.getElementById("lab2").value;
-  if (l2) f.push({ id: "COMPUTER_LAB_2", type: "COMPUTER_LAB", claimed_workstations: l2 });
+  var v = function (id) { return +document.getElementById(id).value; };
+  var f = [{ id: "COMPUTER_LAB_1", type: "COMPUTER_LAB", claimed_workstations: v("lab1"), claimed_area_sqm: v("area1") }];
+  if (v("lab2")) f.push({ id: "COMPUTER_LAB_2", type: "COMPUTER_LAB", claimed_workstations: v("lab2"), claimed_area_sqm: v("area2") });
   return { current_intake: +document.getElementById("intake").value, has_accredited_programmes: document.getElementById("acc").value === "1", facilities: f };
 } });
 </script></body></html>

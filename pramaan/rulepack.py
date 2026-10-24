@@ -5,7 +5,7 @@ from datetime import date
 import yaml
 
 PACK_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "rulepacks")
-KINDS = {"expiry", "entity_match", "expr", "count_vs_claim", "exif_geo", "plausibility", "max_validity"}
+KINDS = {"expiry", "entity_match", "expr", "count_vs_claim", "exif_geo", "plausibility", "max_validity", "table_sum", "table_count", "area_vs_claim"}
 
 
 def load_file(name):

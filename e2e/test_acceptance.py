@@ -19,7 +19,8 @@ BASE = os.environ.get("E2E_BASE", "http://localhost:5180")
 API = os.environ.get("E2E_API", "http://127.0.0.1:8010")
 SEED_TOKEN = os.environ.get("SEED_TOKEN", "e2e-token")
 SAMPLES = os.path.join(ROOT, "public", "samples")
-HOST_A = ["SOCIETY_REG", "LAND_LEASE", "FIRE_NOC", "BUILDING_COMPLETION", "AFFIDAVIT_GENERAL", "ACCREDITATION", "FEE_RECEIPT", "INFRA_PHOTOS"]
+HOST_A = ["SOCIETY_REG", "LAND_LEASE", "FIRE_NOC", "BUILDING_COMPLETION", "AFFIDAVIT_GENERAL", "ACCREDITATION", "FEE_RECEIPT", "FACULTY_LIST",
+          "INFRA_PHOTOS", "FLOOR_PLAN"]
 
 
 def _up(url):

@@ -259,3 +259,102 @@ def degrade(img, seed=1, folds=True, stain=True, low_dpi=True):
         tint = np.array([0.92, 0.85, 0.72]) if a.ndim == 3 else 0.85
         a = a * (1 - m[..., None] * (1 - tint)) if a.ndim == 3 else a * (1 - m * (1 - tint))
     return Image.fromarray(np.clip(a, 0, 255).astype(np.uint8))
+
+
+def table_pdf(title, issuer, lines, header, rows, total_row=None, extra=None):
+    """A document with labelled fields and a ruled table (fee receipts, faculty lists)."""
+    from reportlab.lib import colors
+    from reportlab.platypus import Table, TableStyle
+    b = io.BytesIO()
+    c = canvas.Canvas(b, pagesize=A4, invariant=1)
+    c.setTitle(title)
+    c.setProducer("PRAMAAN synthetic generator")
+    c.setFillColorRGB(0.12, 0.22, 0.4)
+    c.rect(0, H - 70, W, 70, fill=1, stroke=0)
+    c.setFillColorRGB(1, 1, 1)
+    c.setFont("Helvetica-Bold", 15)
+    c.drawString(40, H - 42, issuer)
+    c.setFont("Helvetica", 9)
+    c.drawString(40, H - 58, "Fictional issuer for prototype testing. Not a government document.")
+    c.setFillColorRGB(0, 0, 0)
+    c.setFont("Helvetica-Bold", 17)
+    c.drawString(40, H - 115, title)
+    c.setFont("Helvetica", 11)
+    y = H - 150
+    for label, value in lines:
+        c.drawString(40, y, f"{label}: {value}")
+        y -= 22
+    data = [header] + rows + ([total_row] if total_row else [])
+    t = Table(data, colWidths=[(W - 80) / len(header)] * len(header), rowHeights=14)
+    t.setStyle(TableStyle([("GRID", (0, 0), (-1, -1), 0.6, colors.black), ("FONTSIZE", (0, 0), (-1, -1), 9),
+                           ("BACKGROUND", (0, 0), (-1, 0), colors.lightgrey)]))
+    tw, th = t.wrapOn(c, W - 80, y)
+    t.drawOn(c, 40, y - th - 10)
+    y = y - th - 40
+    for line in extra or []:
+        c.drawString(40, y, line)
+        y -= 16
+    c.setStrokeColorRGB(0.2, 0.3, 0.7)
+    c.setLineWidth(2)
+    c.circle(W - 130, 110, 40)
+    c.setFont("Helvetica", 7)
+    c.setFillColorRGB(0.2, 0.3, 0.7)
+    c.drawCentredString(W - 130, 110, "(mock seal)")
+    c.setStrokeColorRGB(0, 0, 0)
+    p = c.beginPath()
+    p.moveTo(60, 110)
+    for k in range(10):
+        p.curveTo(70 + k * 12, 130, 76 + k * 12, 90, 84 + k * 12, 110)
+    c.drawPath(p)
+    c.setFillColorRGB(0, 0, 0)
+    c.setFont("Helvetica", 9)
+    c.drawString(60, 85, "Authorised signatory")
+    c.showPage()
+    c.save()
+    return b.getvalue()
+
+
+def floor_plan_pdf(rooms, scale=100, institution="Demo Institute"):
+    """Vector floor plan: one rectangle per room (label inside), drawn to the printed scale. rooms: [(label, w_m, h_m)]."""
+    b = io.BytesIO()
+    c = canvas.Canvas(b, pagesize=A4, invariant=1)
+    c.setTitle("Floor Plan")
+    c.setFont("Helvetica-Bold", 16)
+    c.drawString(40, H - 60, "Floor Plan - Ground Floor")
+    c.setFont("Helvetica", 10)
+    c.drawString(40, H - 78, f"Institution: {institution}")
+    c.drawString(40, H - 94, f"Scale 1:{scale}   (all dimensions in metres)   Prepared by: Fictional Architects (mock)")
+    pt = 1000 / 0.3528 / scale  # PDF points per metre
+    x, y = 50, H - 140
+    for label, wm, hm in rooms:
+        w, h = wm * pt, hm * pt
+        if x + w > W - 40:
+            x, y = 50, y - h - 30
+        c.setLineWidth(2)
+        c.rect(x, y - h, w, h)
+        c.setFont("Helvetica", 9)
+        c.drawString(x + 6, y - 16, label)
+        c.drawString(x + 6, y - 28, f"{wm} m x {hm} m")
+        x += w + 20
+    c.showPage()
+    c.save()
+    return b.getvalue()
+
+
+def lab_video(monitors, seed=1, seconds=4, fps=2):
+    """A short walkthrough: the camera pans across one lab. Returns MP4 bytes."""
+    import os
+    import tempfile
+
+    import imageio_ffmpeg
+    wide = lab_photo(monitors, seed=seed).resize((1280, 768))
+    with tempfile.TemporaryDirectory() as d:
+        out = os.path.join(d, "v.mp4")
+        w = imageio_ffmpeg.write_frames(out, (1024, 768), fps=fps, macro_block_size=16, quality=7)
+        w.send(None)
+        n = seconds * fps
+        for i in range(n):
+            x = int(256 * i / max(1, n - 1))
+            w.send(np.ascontiguousarray(np.array(wide.crop((x, 0, x + 1024, 768)))))
+        w.close()
+        return open(out, "rb").read()

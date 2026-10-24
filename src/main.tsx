@@ -121,9 +121,46 @@ function Guide({ onClose }: { onClose: () => void }) {
   );
 }
 
+function TwoStep({ onClose }: { onClose: () => void }) {
+  const { user, reload } = useContext(Ctx);
+  const [setup, setSetup] = useState<any>(null);
+  const [code, setCode] = useState("");
+  const [msg, setMsg] = useState("");
+  const go = async (path: string) => {
+    try { await api(path, { json: { code } }); setMsg(path.endsWith("enable") ? "Two-step sign-in is on. You'll be asked for a code at sign-in." : "Two-step sign-in is off."); setCode(""); setSetup(null); reload(); }
+    catch (e: any) { setMsg(e.message); }
+  };
+  return (
+    <div className="fixed inset-0 z-40 grid place-items-center bg-black/30 p-4" onClick={onClose}>
+      <div className="card w-full max-w-sm p-5 space-y-3" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center"><div className="font-bold flex-1">Two-step sign-in</div><button className="btn2" onClick={onClose}>Close</button></div>
+        <p className="text-sm text-slate-600 dark:text-slate-300">Adds a 6-digit code from an authenticator app (Google Authenticator, Microsoft Authenticator, etc.) to password sign-in.</p>
+        {user?.mfa ? (
+          <>
+            <div className="text-sm font-medium text-emerald-700">Status: on</div>
+            <input className="inp w-full" placeholder="Current 6-digit code to turn it off" value={code} onChange={(e) => setCode(e.target.value)} inputMode="numeric" />
+            <button className="btn2" disabled={code.length < 6} onClick={() => go("/auth/totp/disable")}>Turn off</button>
+          </>
+        ) : !setup ? (
+          <button className="btn" onClick={async () => setSetup(await api("/auth/totp/setup", { method: "POST" }))}>Set up</button>
+        ) : (
+          <>
+            <img src={setup.qr} alt="QR code for the authenticator app" className="mx-auto w-44 h-44" />
+            <div className="text-xs text-slate-500 break-all">Or enter this key: <code>{setup.secret}</code></div>
+            <input className="inp w-full" placeholder="6-digit code from the app" value={code} onChange={(e) => setCode(e.target.value)} inputMode="numeric" autoComplete="one-time-code" />
+            <button className="btn" disabled={code.length < 6} onClick={() => go("/auth/totp/enable")}>Confirm and turn on</button>
+          </>
+        )}
+        {msg && <div className="text-sm">{msg}</div>}
+      </div>
+    </div>
+  );
+}
+
 function Shell() {
   const { user, setUser, reload } = useContext(Ctx);
   const [guide, setGuide] = useState(false);
+  const [twoStep, setTwoStep] = useState(false);
   const [dark, setDark] = useState(() => { try { return localStorage.getItem("dark") === "1"; } catch { return false; } });
   useEffect(() => { document.documentElement.classList.toggle("dark", dark); try { localStorage.setItem("dark", dark ? "1" : "0"); } catch {} }, [dark]);
   if (!user) return null;
@@ -153,6 +190,7 @@ function Shell() {
           <select className="inp" value={user.sub} onChange={(e) => switchTo(e.target.value)} title="Switch demo role">
             {DEMO_ORDER.concat(user.sub && !DEMO_ORDER.includes(user.sub) ? [user.sub] : []).map((n) => <option key={n} value={n}>{n === user.sub ? `${ROLES[user.role]?.name || user.role}${user.region !== "ALL" ? ` (${user.region})` : ""}` : n}</option>)}
           </select>
+          <button className="btn2" onClick={() => setTwoStep(true)}>{user.mfa ? "2-step: on" : "2-step sign-in"}</button>
           <button className="btn2" onClick={() => setDark(!dark)}>{dark ? "Light" : "Dark"}</button>
           <button className="btn2" onClick={async () => { await api("/auth/logout", { method: "POST" }); setUser(null); }}>Exit</button>
         </header>
@@ -170,6 +208,7 @@ function Shell() {
         </main>
       </div>
       {guide && <Guide onClose={() => setGuide(false)} />}
+      {twoStep && <TwoStep onClose={() => setTwoStep(false)} />}
     </div>
   );
 }

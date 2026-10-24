@@ -126,7 +126,24 @@ def totp_setup(user=Depends(current_user)):
     import pyotp
     secret = pyotp.random_base32()
     get_db().users.update_one({"username": user["sub"]}, {"$set": {"mfa_pending_enc": encrypt(secret)}})
-    return {"secret": secret, "uri": pyotp.TOTP(secret).provisioning_uri(user["sub"], issuer_name="PRAMAAN (demo)")}
+    import base64
+
+    import qrcode
+    uri = pyotp.TOTP(secret).provisioning_uri(user["sub"], issuer_name="PRAMAAN (demo)")
+    b = io.BytesIO()
+    qrcode.make(uri, box_size=5, border=2).save(b, "PNG")
+    return {"secret": secret, "uri": uri, "qr": "data:image/png;base64," + base64.b64encode(b.getvalue()).decode()}
+
+
+@app.post("/api/auth/totp/disable")
+def totp_disable(body: dict = Body(...), user=Depends(current_user)):
+    import pyotp
+    u = get_db().users.find_one({"username": user["sub"]})
+    if not u.get("mfa_secret_enc") or not pyotp.TOTP(decrypt(u["mfa_secret_enc"])).verify(str(body.get("code", "")), valid_window=1):
+        raise HTTPException(400, "Code did not match")
+    get_db().users.update_one({"username": user["sub"]}, {"$unset": {"mfa_secret_enc": ""}})
+    audit.record(user["sub"], "auth.totp_disabled", "user")
+    return {"ok": True}
 
 
 @app.post("/api/auth/totp/enable")
@@ -151,7 +168,8 @@ def logout(response: Response):
 @app.get("/api/me")
 def me(user=Depends(current_user)):
     from .security import MATRIX
-    return {**user, "caps": [c for c in MATRIX if can(user, c)]}
+    u = get_db().users.find_one({"username": user["sub"]}, {"mfa_secret_enc": 1}) or {}
+    return {**user, "caps": [c for c in MATRIX if can(user, c)], "mfa": bool(u.get("mfa_secret_enc"))}
 
 
 # ---------------- host API (server-to-server)
