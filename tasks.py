@@ -5,6 +5,7 @@
   test     unit/integration tests                   e2e     Playwright acceptance tests (needs `up`)
   eval     evaluation report -> docs/EVAL.md        probe   GPU/model probe -> docs/VERSIONS.md
   eval-real  score real files in realdata/ against realdata/truth.csv (offline)
+  fetch-public / eval-public  public dataset subsets (MIT Indoor 67, CubiCasa5K, IIIT-HW-Dev) and their scores
   down     stop servers started by `up`             cron    run nightly jobs once
 Use MODE=FULL (env or .env) for GPU models; default is LITE."""
 import base64
@@ -122,6 +123,16 @@ def eval_real():
     sys.exit(sh([PY, "-m", "pramaan.evaluate_real"], env={k: v for k, v in os.environ.items() if k not in ("MONGODB_URI", "GROQ_KEY", "SMTP_HOST")}))
 
 
+def fetch_public():
+    """Downloads small research-use subsets of public datasets into realdata/public/ (gitignored)."""
+    sys.exit(sh([PY, "scripts/fetch_public_data.py"] + sys.argv[2:]))
+
+
+def eval_public():
+    """Scores the models on those public datasets (offline). Use MODE=FULL."""
+    sys.exit(sh([PY, "-m", "pramaan.evaluate_public"]))
+
+
 def probe():
     sys.exit(sh([PY, "scripts/gpu_probe.py", "--load"]))
 
@@ -132,7 +143,7 @@ def cron():
     print(http("GET", "http://127.0.0.1:8010/api/cron/daily", tok))
 
 
-TARGETS = {"secrets": secrets_, "up": up, "down": down, "seed": seed, "demo": demo, "test": test, "e2e": e2e, "eval": eval_, "eval-real": eval_real,
+TARGETS = {"secrets": secrets_, "up": up, "down": down, "seed": seed, "demo": demo, "test": test, "e2e": e2e, "eval": eval_, "eval-real": eval_real, "fetch-public": fetch_public, "eval-public": eval_public,
            "probe": probe, "cron": cron}
 
 if __name__ == "__main__":

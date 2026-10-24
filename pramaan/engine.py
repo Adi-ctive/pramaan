@@ -126,6 +126,8 @@ def process_doc(doc, pack, app):
         res["type"], res["type_conf"], res["scanned"] = ("INFRA_PHOTOS" if doc["slot"] == "INFRA_PHOTOS" else None), 1.0, doc["slot"] != "INFRA_PHOTOS"
         imgs = [img.convert("RGB")]
 
+    if doc["slot"] == "FLOOR_PLAN" and not res.get("floor_plan") and imgs:
+        res["floor_plan_raster"] = stage("floor_plan_raster", lambda: extract.floor_plan_raster(imgs[0]))
     for k, im in enumerate(imgs[:2]):
         entry = {"hash": forensics.dhash(im)}
         if doc["slot"] != "INFRA_PHOTOS":
@@ -416,7 +418,7 @@ def run(app_id, changed=None, actor="system", pack_override=None, dry=False, age
                               f"Read as '{f.get('raw')}' with confidence {f.get('conf')} (threshold {pack['thresholds'].get('htr_min_conf')}). Routed to manual review.",
                               [_fe(d, fname, f)], doc_id=d["id"], key=fname, expected=f">= {pack['thresholds'].get('htr_min_conf')}",
                               observed=f.get("conf"), conf=f.get("conf"), action="Officer to read this field", detector="Handwriting Model")
-            elif r.get("scanned"):
+            elif r.get("scanned") and spec.get("kind") != "floor_plan":
                 F.add("HTR_LOW_CONFIDENCE", "EXTRACTION", f"{spec.get('label', s)}: scanned or handwritten, not machine-readable",
                       "No text layer. Handwriting Model is not available in LITE mode, so fields could not be read with confidence. Routed to manual review.",
                       [{"type": "region", "document_id": d["id"], "page": 0, "bbox": [0, 0, 1, 1]}], doc_id=d["id"],
@@ -424,8 +426,10 @@ def run(app_id, changed=None, actor="system", pack_override=None, dry=False, age
                       action="Officer to read the document", detector="Handwriting Model")
                 continue
             if spec.get("kind") == "floor_plan" and not r.get("floor_plan"):
+                n_rooms = len(r.get("floor_plan_raster") or [])
                 F.add("FLOOR_PLAN_NOT_MEASURED", "INFRASTRUCTURE", "Floor plan could not be measured",
-                      "Areas are measured from vector floor plans with a printed scale. This one is an image or has no scale. Officer to review.",
+                      (f"Found {n_rooms} enclosed rooms on this image plan, but areas need a printed scale. " if n_rooms else "") +
+                      "Areas are measured exactly from vector floor plans with a printed scale. Officer to review.",
                       [{"type": "region", "document_id": d["id"], "page": 0, "bbox": [0, 0, 1, 1]}], doc_id=d["id"], conf=0.0, detector="Floor-plan reader")
             for reg in (spec.get("requires_regions") or []) if "regions" in r else []:
                 if reg not in (r.get("regions") or {}):

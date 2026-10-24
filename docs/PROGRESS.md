@@ -75,6 +75,12 @@ Live: https://pramaan-sih26.vercel.app (click "Enter as Senior Officer"). Script
 - No Docker Compose, Redis/Celery, MinIO, Mailpit or Caddy (see DECISIONS.md for what replaces each).
 - Tests now: 26 unit/integration, 8 Playwright acceptance (local), 5 non-destructive acceptance tests on the live site.
 
+## Public datasets (real photos, real plans)
+
+`python tasks.py fetch-public` then `MODE=FULL python tasks.py eval-public` writes docs/EVAL-PUBLIC.md. Measured 25 Oct:
+room type on 360 real MIT Indoor photos 87.5% (computer lab precision 79%, recall 88%); rooms found on 60 real CubiCasa5K plans:
+recall 23%, precision 54% (weak, raster plans are messy); Hindi handwriting (IIIT-HW-Dev) pending its download.
+
 ## Real data
 
 Spec amended 24 Oct: real files from our own college are allowed with permission (DECISIONS.md #24). Put them in realdata/ with

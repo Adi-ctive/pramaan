@@ -225,3 +225,40 @@ def video_frames(data, fps=1, max_frames=8):
             keep.append(f)
             hashes.append(h)
     return keep
+
+
+# ---------------- raster floor plans (scans, photos, exported images)
+def _morph(mask, r, grow):
+    """Square dilation (grow=True) or erosion (grow=False) of a boolean mask by r pixels."""
+    import numpy as np
+    out = mask.copy()
+    for dy in range(-r, r + 1):
+        for dx in range(-r, r + 1):
+            sh = np.roll(np.roll(mask, dy, 0), dx, 1)
+            out = (out | sh) if grow else (out & sh)
+    return out
+
+
+def floor_plan_raster(img, wall_thresh=120, thick=0, door=3, min_room_frac=0.004):  # tuned on 20 CubiCasa5K plans
+    """Rooms as enclosed white regions between walls. Thin lines (furniture, text, door swings) are dropped by keeping only
+    wall strokes thicker than 2*thick px, and doorways are closed by growing walls `door` px. Areas are relative (pixels):
+    a raster plan has no reliable scale. Returns [{bbox, area_px}] with bbox in page fractions."""
+    import numpy as np
+    from .forensics import label
+    g = np.asarray(img.convert("L"), dtype=np.uint8)
+    H, W = g.shape
+    k = max(1, max(H, W) // 800)
+    small = g[::k, ::k]
+    walls = small < wall_thresh
+    if thick:
+        walls = _morph(_morph(walls, thick, False), thick, True)  # opening keeps thick strokes only
+    sealed = _morph(walls, door, True)
+    h, w = small.shape
+    rooms = []
+    for area, x, y, bw, bh in label(~sealed):
+        if x == 0 or y == 0 or x + bw >= w or y + bh >= h or area < min_room_frac * h * w:
+            continue
+        x0, y0 = max(0, x - door), max(0, y - door)  # undo the wall growth on the box
+        x1, y1 = min(w, x + bw + door), min(h, y + bh + door)
+        rooms.append({"bbox": [round(x0 / w, 4), round(y0 / h, 4), round((x1 - x0) / w, 4), round((y1 - y0) / h, 4)], "area_px": int(area * k * k)})
+    return sorted(rooms, key=lambda r: -r["area_px"])
