@@ -121,7 +121,7 @@ export function Alerts() {
             <td>{a.status === "OPEN" && user.caps.includes("dispose_flags") && <button className="btn2" onClick={async () => { await api(`/alerts/${a.id}/ack`, { method: "POST" }); load(); }}>Acknowledge</button>}</td></tr>
         ))}
       </tbody></table></div>
-      <div className="text-xs text-slate-500">Channels in this deployment: in-app and signed host webhook. Email is not configured on the serverless build.</div>
+      <Outbox />
     </div>
   );
 }
@@ -129,6 +129,35 @@ export function Alerts() {
 function lineDiff(a: string, b: string) {
   const A = a.split("\n"), B = new Set(b.split("\n")), SA = new Set(A);
   return [...A.filter((l) => !B.has(l)).map((l) => "- " + l), ...b.split("\n").filter((l) => !SA.has(l)).map((l) => "+ " + l)];
+}
+
+function Outbox() {
+  const [mails] = useData<any[]>("/outbox");
+  return (
+    <div className="card p-3">
+      <div className="font-semibold text-sm mb-1">Email outbox</div>
+      <div className="text-xs text-slate-500 mb-2">Alert emails. Sent through SMTP when SMTP_HOST is set (e.g. Mailpit locally); otherwise kept here as the mail catcher.</div>
+      {(mails || []).slice(0, 20).map((m) => <div key={m.id} className="text-xs border-t border-slate-100 dark:border-slate-800 py-1"><b>{m.subject}</b> · {m.ts.slice(0, 16)} · {m.channel}<div className="text-slate-500">{m.body}</div></div>)}
+      {mails && !mails.length && <div className="text-xs">No alert emails yet.</div>}
+    </div>
+  );
+}
+
+function Issuers() {
+  const [rows, load] = useData<any[]>("/issuers");
+  const set = async (id: string, patch: any) => { await api(`/issuers/${id}`, { method: "PUT", json: patch }); load(); };
+  return (
+    <div className="card p-3 text-sm">
+      <div className="font-semibold mb-1">Issuing offices (mock verification services)</div>
+      <div className="text-xs text-slate-500 mb-2">Simulate downtime, slowness or mismatches to show how PRAMAAN routes to manual confirmation.</div>
+      <table className="w-full text-xs"><tbody>{(rows || []).map((i) => (
+        <tr key={i.id} className="border-t border-slate-100 dark:border-slate-800"><td>{i.name}</td>
+          <td><label><input type="checkbox" checked={!!i.down} onChange={(e) => set(i.id, { down: e.target.checked })} /> down</label></td>
+          <td><label><input type="checkbox" checked={!!i.force_mismatch} onChange={(e) => set(i.id, { force_mismatch: e.target.checked })} /> force mismatch</label></td>
+          <td><select className="inp" value={i.latency_ms || 0} onChange={(e) => set(i.id, { latency_ms: +e.target.value })}>{[0, 500, 2000].map((v) => <option key={v} value={v}>{v} ms</option>)}</select></td></tr>
+      ))}</tbody></table>
+    </div>
+  );
 }
 
 export function RulePacks() {
@@ -180,6 +209,7 @@ export function Hosts() {
   return (
     <div className="space-y-3">
       <h1 className="text-2xl font-bold tracking-tight">Connected portals</h1><p className="text-sm text-slate-500 -mt-2">Portals that send applications to PRAMAAN. Each maps its own upload slots to PRAMAAN document types and receives signed status updates.</p>
+      <Issuers />
       {key && <div className="card p-3 text-sm bg-amber-50 dark:bg-amber-950">New API key (shown once): <code className="break-all">{key.api_key}</code><div className="text-xs">{key.note}</div></div>}
       {hosts.map((h) => (
         <div key={h.id} className="card p-3 space-y-2 text-sm">
@@ -230,7 +260,7 @@ export function Evaluation() {
   return (
     <div className="space-y-3">
       <div className="flex items-center gap-2"><h1 className="text-2xl font-bold tracking-tight mr-auto">Accuracy on the test set</h1>
-        {user.caps.includes("run_eval") && <button className="btn" disabled={busy} onClick={async () => { setBusy(true); setErr(""); try { await api("/eval/run", { method: "POST" }); load(); } catch (e: any) { setErr(e.message); } setBusy(false); }}>{busy ? "Running…" : "Run evaluation"}</button>}</div>
+        {user.caps.includes("run_eval") && <button className="btn" disabled={busy} onClick={async () => { setBusy(true); setErr(""); try { await api("/eval/run?quick=true", { method: "POST" }); load(); } catch (e: any) { setErr(e.message); } setBusy(false); }}>{busy ? "Running…" : "Run quick evaluation"}</button>}</div>
       <p className="text-sm text-slate-500 -mt-2">Measured on freshly generated synthetic documents with known answers. Real numbers, including weak ones.</p>
       {err && <div className="text-sm text-red-600">{err}</div>}
       {!r ? <div className="card p-3 text-sm">No runs yet.</div> : (

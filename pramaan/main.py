@@ -27,10 +27,12 @@ async def headers(request: Request, call_next):
 
 
 @app.on_event("startup")
-def autoseed():
+async def autoseed():
     if not os.environ.get("MONGODB_URI") and not os.environ.get("VERCEL") and not get_db().users.find_one():
+        import asyncio
         from .seed import reset
-        reset(password=os.environ.get("DEMO_PASSWORD", "demo-local"))
+        # pyHanko runs its own event loop, so the seed must run off the server's loop
+        await asyncio.to_thread(reset, None, os.environ.get("DEMO_PASSWORD", "demo-local"))
 
 
 def access_log(user, what, obj):
@@ -276,14 +278,14 @@ def quick_check(doc_id, pack, slot):
 
 
 @app.post("/api/widget/upload")
-async def w_upload(slot: str = Form(...), file: UploadFile = File(...), facility: str = Form(None), x_session: str = Header(None)):
+def w_upload(slot: str = Form(...), file: UploadFile = File(...), facility: str = Form(None), x_session: str = Header(None)):
     from .seed import add_document
     a = session_app(x_session)
     h = get_db().hosts.find_one({"id": a["host_id"]})
     canon = next((c for s, l, c in h["slots"] if s == slot), None)
     if not canon:
         raise HTTPException(400, "Unknown slot")
-    data = await file.read()
+    data = file.file.read()
     err = check_upload(file.filename, data)
     if err:
         audit.record("institution", "upload.rejected", a["id"], {"reason": err, "file": file.filename})
@@ -682,9 +684,9 @@ def eval_runs(user=Depends(current_user)):
 
 
 @app.post("/api/eval/run")
-def eval_run(user=Depends(require("run_eval"))):
+def eval_run(quick: bool = True, user=Depends(require("run_eval"))):
     from .evaluate import run_eval
-    r = run_eval(quick=os.environ.get("VERCEL") == "1")  # full run (with rule-level apps) is `python tasks.py eval`
+    r = run_eval(quick=quick or os.environ.get("VERCEL") == "1")  # full run (with rule-level apps) is `python tasks.py eval`
     audit.record(user["sub"], "eval.run", r["id"])
     return r
 

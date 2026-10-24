@@ -166,6 +166,9 @@ export default function Detail() {
         <div className="flex flex-wrap items-end gap-3 mt-1">
           <h1 className="text-2xl font-bold tracking-tight">{a.form.institution_name}</h1>
           <span className="text-sm text-slate-500 pb-1">{CATEGORY[a.category] || a.category} · via {d.host} · {a.region} region · ref {a.external_ref}</span>
+          <span className="flex-1" />
+          <a className="btn2" href={`/api/applications/${id}/report.pdf`} target="_blank">Report PDF</a>
+          <a className="btn2" href={`/api/applications/${id}/report.html?view=institution`} target="_blank">College's copy</a>
         </div>
       </div>
 
@@ -286,7 +289,14 @@ export default function Detail() {
           )}
           {tab === "timeline" && (
             <div className="text-xs space-y-1">
-              <div className="mb-2">Report versions: {d.reports.map((r: any) => `v${r.version}${r.changed ? " (after re-upload)" : ""}`).join(" → ")}. Checked in {rep.elapsed_ms} ms using rule pack {d.pack}.</div>
+              <div className="mb-2">Report versions: {d.reports.map((r: any) => `v${r.version}${r.changed ? " (after re-upload)" : ""}`).join(" → ")}. Checked in {rep.elapsed_ms} ms using rule pack {d.pack}, {rep.mode} mode{rep.agents ? ", with agents" : ""}.
+                {rep.providers && <span className="text-slate-500"> Models: {Object.entries(rep.providers).filter(([k]) => k.includes("Model") || k.includes("LLM") || k.includes("Detector") || k.includes("Classifier")).map(([k, v]) => `${k}: ${v}`).join(" · ")}</span>}</div>
+              {(d.traces || []).length > 0 && (
+                <div className="mb-3 rounded bg-slate-50 dark:bg-slate-800 p-2">
+                  <div className="font-semibold mb-1">Why it was checked this way (agent trace)</div>
+                  {d.traces.map((t: any, i: number) => <div key={i}><b>{t.agent}</b> · {t.tool}{t.note ? `: ${t.note}` : ""}</div>)}
+                </div>
+              )}
               {(rep.timeline || []).map((t: any, i: number) => (
                 <div key={i} className="flex gap-2">
                   <span className={`w-16 shrink-0 ${t.status === "reused" ? "text-slate-400" : t.status === "error" ? "text-red-600" : "text-emerald-700"}`}>{t.status === "reused" ? "not rerun" : t.status}</span>

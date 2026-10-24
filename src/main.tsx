@@ -22,6 +22,7 @@ function Landing({ onDone }: { onDone: () => void }) {
   const [demo, setDemo] = useState<any[]>([]);
   const [u, setU] = useState("");
   const [p, setP] = useState("");
+  const [totp, setTotp] = useState<string | null>(null);
   const [err, setErr] = useState("");
   useEffect(() => { api("/demo-users").then(setDemo).catch(() => {}); }, []);
   const enter = async (username: string) => {
@@ -29,7 +30,8 @@ function Landing({ onDone }: { onDone: () => void }) {
   };
   const login = async (e: React.FormEvent) => {
     e.preventDefault();
-    try { await api("/auth/login", { json: { username: u, password: p } }); onDone(); } catch (x: any) { setErr(x.message); }
+    try { await api("/auth/login", { json: { username: u, password: p, ...(totp ? { totp } : {}) } }); onDone(); }
+    catch (x: any) { if (x.message === "totp_required") { setTotp(""); setErr("Enter the 6-digit code from your authenticator app."); } else setErr(x.message); }
   };
   const users = DEMO_ORDER.map((n) => demo.find((d) => d.username === n)).filter(Boolean);
   return (
@@ -76,6 +78,7 @@ function Landing({ onDone }: { onDone: () => void }) {
             <form onSubmit={login} className="mt-2 space-y-2">
               <input className="inp w-full" placeholder="Username" value={u} onChange={(e) => setU(e.target.value)} autoComplete="username" />
               <input className="inp w-full" placeholder="Password" type="password" value={p} onChange={(e) => setP(e.target.value)} autoComplete="current-password" />
+              {totp !== null && <input className="inp w-full" placeholder="Authenticator code" inputMode="numeric" value={totp} onChange={(e) => setTotp(e.target.value)} autoComplete="one-time-code" />}
               <button className="btn w-full">Sign in</button>
             </form>
           </details>

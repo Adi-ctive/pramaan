@@ -116,7 +116,7 @@ def eval_():
 
 
 def probe():
-    sys.exit(sh([PY, "scripts/gpu_probe.py"]))
+    sys.exit(sh([PY, "scripts/gpu_probe.py", "--load"]))
 
 
 def cron():

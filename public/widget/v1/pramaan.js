@@ -22,7 +22,7 @@
 
   function el(tag, attrs, kids) {
     var e = document.createElement(tag);
-    for (var k in attrs || {}) { if (k === "text") e.textContent = attrs[k]; else if (k.slice(0, 2) === "on") e.addEventListener(k.slice(2), attrs[k]); else e.setAttribute(k, attrs[k]); }
+    for (var k in attrs || {}) { if (attrs[k] === null || attrs[k] === undefined) continue; if (k === "text") e.textContent = attrs[k]; else if (k.slice(0, 2) === "on") e.addEventListener(k.slice(2), attrs[k]); else e.setAttribute(k, attrs[k]); }
     (kids || []).forEach(function (c) { if (c) e.appendChild(c); });
     return e;
   }

@@ -5,7 +5,12 @@ export async function api<T = any>(path: string, opts: RequestInit & { json?: un
     init.headers = { "Content-Type": "application/json", ...(opts.headers || {}) };
     init.body = JSON.stringify(opts.json);
   }
-  const r = await fetch("/api" + path, init);
+  let r = await fetch("/api" + path, init);
+  if (r.status === 401 && !path.startsWith("/auth/")) {
+    // access tokens last 15 minutes; rotate once with the refresh cookie and retry
+    const rr = await fetch("/api/auth/refresh", { method: "POST", credentials: "include" });
+    if (rr.ok) r = await fetch("/api" + path, init);
+  }
   const ct = r.headers.get("content-type") || "";
   const body = ct.includes("json") ? await r.json() : await r.text();
   if (!r.ok) throw Object.assign(new Error((body && body.detail) || r.statusText), { status: r.status, body });

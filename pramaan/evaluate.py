@@ -120,7 +120,7 @@ def handwriting(pack, n, rnd):
             errs.append(cer(got.get("raw"), t))
             exact += (got.get("raw") or "").strip() == t
             routed += got.get("conf", 0) < pack["thresholds"]["htr_min_conf"]
-    return {"handwriting_cer": round(float(np.mean(errs)), 4), "handwriting_exact": round(exact / rows, 3), "fields": rows,
+    return {"handwriting_cer": round(float(np.mean(errs)), 4), "handwriting_exact": round(exact / rows, 3), "handwriting_fields": rows,
             "routed_to_manual": routed, "note": "OCR Model reads the handwriting first; Handwriting Model re-reads low-confidence values."}
 
 
@@ -302,7 +302,8 @@ def run_eval(n=6, quick=False):
         rc = providers.scene.classify(img, ["computer lab", "classroom", "library", "office", "corridor", "washroom"])
         if rc:
             rooms.append(rc["label"] == "computer lab")
-    run["infrastructure"] = {"count_mae": round(float(np.mean(errs)), 2), "photos": len(errs), "detector": providers.status()["Object Detector"],
+    det = "Object Detector (FULL, open-vocabulary)" if providers.MODE == "FULL" else "Object Detector (LITE, classical counter)"
+    run["infrastructure"] = {"count_mae": round(float(np.mean(errs)), 2), "photos": len(errs), "detector": det,
                              "room_type_accuracy": round(sum(rooms) / len(rooms), 3) if rooms else None}
     run["validation"] = None if quick else rule_level(pack)
 
@@ -356,7 +357,7 @@ def markdown(r):
          f"| Field exact match, scanned printed (OCR Model) | {pct(e.get('scanned_field_exact_match'))} |",
          f"| Printed CER, scanned (OCR Model) | {pct(e.get('scanned_printed_cer'))} |",
          f"| Handwriting CER | {pct(e.get('handwriting_cer'))} |",
-         f"| Handwriting exact match | {pct(e.get('handwriting_exact'))} |"]
+         f"| Handwriting exact match | {pct(e.get('handwriting_exact'))} ({e.get('handwriting_fields', 0)} fields) |"]
     if r.get("validation"):
         L.append(f"| Validation: single-defect apps flagged exactly right | {pct(r['validation']['exact_match_rate'])} ({r['validation']['applications']} apps) |")
     L += [f"| Seeded discrepancy recall | {pct(r['discrepancies']['recall'])} ({r['discrepancies']['found']}/{r['discrepancies']['expected']}) |",

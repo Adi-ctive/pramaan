@@ -180,9 +180,11 @@ def check_upload(name, data):
     if not data.startswith(magic if isinstance(magic, tuple) else (magic,)):
         return "File content does not match its extension"
     if ext == ".pdf":
-        for tok in (b"/JavaScript", b"/JS", b"/Launch", b"/EmbeddedFile", b"/OpenAction"):
-            if tok in data:
-                return f"PDF contains active content ({tok.decode()}) and was rejected"
+        import re
+        dicts = re.sub(rb"stream\r?\n.*?endstream", b"", data, flags=re.S)  # look at object dictionaries, not binary streams
+        hit = re.search(rb"/(JavaScript|JS|Launch|EmbeddedFile|OpenAction)(?=[\s/<\[(>])", dicts)
+        if hit:
+            return f"PDF contains active content (/{hit.group(1).decode()}) and was rejected"
         if data.count(b"/Type /Page") - data.count(b"/Type /Pages") > MAX_PDF_PAGES:
             return f"PDF has more than {MAX_PDF_PAGES} pages"
     else:
