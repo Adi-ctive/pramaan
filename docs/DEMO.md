@@ -3,19 +3,21 @@
 About 8 minutes. Works on the live site (https://pramaan-sih26.vercel.app) or locally after `python tasks.py demo` (http://localhost:5180).
 Sample files: /samples/ on the same site.
 
-1. **Start.** Open the site. The landing page explains the flow. Click **Enter as Senior Officer**.
-2. **Queue.** "Applications to review" shows 5 applications, worst first. Narmada College has serious problems. Shivalik passes everything.
-3. **Problem application.** Open Narmada College of Engineering. Point at:
-   - the red verdict and the 9-check grid;
-   - "Building Completion Certificate not uploaded";
-   - "Fire Safety NOC has expired" (click the evidence, the date is boxed on the document);
-   - the name mismatch between the society registration and the lease deed;
-   - claimed intake 180 vs 120 in AICTE records ("AICTE records comparison" tab);
-   - the affidavit: scanned and handwritten, routed to manual reading, and a pasted-in date (tick "Show edit heatmap");
-   - the accreditation QR mismatch ("Issuer confirmations" tab shows issuer vs document values);
-   - lab photo reused from another college (click "Compare with matching image");
-   - "12 computers seen in photos, 30 claimed", and a photo taken 40 km from campus;
-   - the fee receipt with instruction-like text, treated as data and flagged.
+1. **Start.** Open the site. Two doors: click **I review applications**. A short tour points at each part (replay it with "Show me around").
+2. **Queue.** One card per application, worst first. Red shield means serious problems; the row of 9 small icons shows which checks failed.
+   Click **Review** on Narmada College of Engineering.
+3. **Guided review.** Click **Start review**. PRAMAAN shows "Problem 1 of 12": the right document opens, a numbered pin marks the spot,
+   the problem is one plain sentence with "Should be / Found", and there are two buttons: **It's a problem** or **Not a problem**.
+   Step through with the arrows:
+   - Building Completion Certificate was not uploaded;
+   - Fire Safety NOC expired on 31 Mar 2026 (pin on the date, QR table below confirms the document itself is genuine);
+   - claims 180 students, AICTE approved 120;
+   - part of the affidavit looks edited (tick "Show edit heatmap");
+   - this lab photo also appears in another college's application (side-by-side view);
+   - QR code says "B.Tech Civil Engineering", document says "B.Tech Computer Science and Engineering";
+   - 12 computers seen in photos, 30 claimed, and Lab 1 is 48 m² on the floor plan against 66 claimed;
+   - the fee receipt contains hidden text aimed at the AI (it was ignored and flagged);
+   - name differs between the society registration and the lease deed; photo taken 40 km from campus; handwritten affidavit for a person to read.
 4. **Clean application.** Open Shivalik Institute. "All checks passed", every document confirmed with its issuer. Its affidavit is bilingual
    (Hindi labels) and is still read correctly. Also point at the faculty list (rows match AICTE records) and the floor plan (lab area measured).
    Narmada's floor plan shows Lab 1 at 48 sq m against 66 claimed.
@@ -23,8 +25,8 @@ Sample files: /samples/ on the same site.
    samples slot by slot. The widget warns on the expired Fire NOC immediately. Submit. The college sees only the items to fix, no forensics.
 6. **Rectify.** Upload `FIRE_NOC__fire_noc_renewed.pdf` in the Fire NOC slot. The expired item disappears. In the console, "How it was
    processed" shows report v2 and that only the Fire NOC was re-checked.
-7. **Decide.** In Narmada's page the decision note is locked. Click Review on a serious finding, give a reason, Dismiss. The note stays locked
-   until every serious finding is confirmed or dismissed. Then record it.
+7. **Decide.** The bar at the bottom says "Decision locked" until every serious problem has been marked, each with a reason saved to the audit
+   trail. Then type the decision and record it.
 8. **Second portal.** Open /host-b/ (University Affiliation Portal, mock). Different slot names ("Fire Clearance Certificate"), different rule
    pack, same engine.
 9. **Audit.** Switch role to Auditor (top right). Audit trail, Verify chain: intact. Locally, `curl -X POST localhost:8010/api/admin/tamper-demo
