@@ -18,36 +18,107 @@
   "seconds": 19.2,
   "mode": "LITE"
  },
- "mode": "LITE",
+ "mode": "FULL",
  "date": "25 Oct 2026",
- "total_items": 7747,
+ "total_items": 8013,
  "rvl": {
-  "documents": 5334,
+  "documents": 5600,
   "errors": 0,
-  "flagged": 5334,
-  "false_alarm_rate": 1.0,
-  "escalated": 5334,
-  "ms_per_doc": 276.2,
+  "flagged": 1425,
+  "false_alarm_rate": 0.2545,
+  "escalated": 2407,
+  "ms_per_doc": 178.5,
   "workers": 6,
   "per_class": {
+   "advertisement": {
+    "docs": 350,
+    "flagged": 162,
+    "rate": 0.4629
+   },
+   "budget": {
+    "docs": 350,
+    "flagged": 66,
+    "rate": 0.1886
+   },
    "email": {
-    "docs": 2202,
-    "flagged": 2202,
-    "rate": 1.0
+    "docs": 350,
+    "flagged": 25,
+    "rate": 0.0714
    },
    "file folder": {
-    "docs": 2527,
-    "flagged": 2527,
-    "rate": 1.0
+    "docs": 350,
+    "flagged": 114,
+    "rate": 0.3257
    },
    "form": {
-    "docs": 605,
-    "flagged": 605,
-    "rate": 1.0
+    "docs": 350,
+    "flagged": 90,
+    "rate": 0.2571
+   },
+   "handwritten": {
+    "docs": 350,
+    "flagged": 193,
+    "rate": 0.5514
+   },
+   "invoice": {
+    "docs": 350,
+    "flagged": 125,
+    "rate": 0.3571
+   },
+   "letter": {
+    "docs": 350,
+    "flagged": 84,
+    "rate": 0.24
+   },
+   "memo": {
+    "docs": 350,
+    "flagged": 64,
+    "rate": 0.1829
+   },
+   "news article": {
+    "docs": 350,
+    "flagged": 98,
+    "rate": 0.28
+   },
+   "presentation": {
+    "docs": 350,
+    "flagged": 44,
+    "rate": 0.1257
+   },
+   "questionnaire": {
+    "docs": 350,
+    "flagged": 83,
+    "rate": 0.2371
+   },
+   "resume": {
+    "docs": 350,
+    "flagged": 24,
+    "rate": 0.0686
+   },
+   "scientific publication": {
+    "docs": 350,
+    "flagged": 58,
+    "rate": 0.1657
+   },
+   "scientific report": {
+    "docs": 350,
+    "flagged": 97,
+    "rate": 0.2771
+   },
+   "specification": {
+    "docs": 350,
+    "flagged": 98,
+    "rate": 0.28
    }
   },
-  "seconds": 247.4,
-  "mode": "LITE"
+  "ocr": {
+   "pages": 1000,
+   "ms_per_page": 277.4,
+   "words_per_page": 114.7,
+   "pages_no_text": 24
+  },
+  "seconds": 446.8,
+  "mode": "FULL"
  },
  "cubicasa": {
   "plans": 262,
@@ -63,7 +134,7 @@
   "genuine_receipts": 973,
   "tampered_receipts": 986,
   "errors": 0,
-  "ms_per_doc": 777.7,
+  "ms_per_doc": 813.9,
   "tamper": {
    "tampered": 986,
    "genuine": 973,
@@ -78,9 +149,16 @@
   },
   "dates_parsed": {
    "receipts": 973,
-   "parsed": 725
+   "parsed": 968
   },
-  "seconds": 257.4,
-  "mode": "LITE"
+  "ocr": {
+   "receipts": 973,
+   "total_read": 0.9825,
+   "date_read": 0.9527,
+   "company_cer": 0.1703,
+   "ms_per_page": 352.0
+  },
+  "seconds": 615.9,
+  "mode": "FULL"
  }
 }

@@ -6,7 +6,7 @@ import re
 import numpy as np
 from PIL import Image
 
-VERSION = "1.1.0"
+VERSION = "1.2.0"
 MAX_PIXELS = 6_000_000  # 600-dpi scans are downscaled first: the 3x3 median of a 35 MP page needs over 1 GB
 MIN_DIFF = 2.0  # grey levels. Real scanners clip paper to white, so noise ratios over a near-zero median mean nothing
 
@@ -77,8 +77,10 @@ def noise_map(img, block=16):
 
 def noise_check(img, threshold=0.65):
     ratio, block, std, med = noise_map(img)
-    # a block is odd only if its noise differs from the page both in ratio and by a visible amount
-    comps = label(((ratio < 0.35) | (ratio > 3.0)) & (np.abs(std - med) > MIN_DIFF))
+    # odd block: much cleaner than the page (a pasted patch), by ratio and by a visible amount. Blocks noisier than the page
+    # are not flagged: on 5,600 real RVL-CDIP scans and 973 real receipts they caused nearly all false alarms (25% and 71%)
+    # and flagged genuine and tampered receipts at the same rate. The heatmap still shows them.
+    comps = label((ratio < 0.35) & (np.abs(std - med) > MIN_DIFF))
     best = max(comps, default=None)
     area = best[0] if best else 0
     score = round(min(1.0, area / 12), 3)
@@ -121,7 +123,7 @@ def ela_score(img, q=90):
     return round(float(np.percentile(blocks, 99.5) / med), 3)
 
 
-def copy_move(img, block=16, step=2, min_shift=40, quant=6, min_pairs=500):
+def copy_move(img, block=16, step=2, min_shift=40, quant=6, min_pairs=1500):  # 500 flagged 18% of real receipts (repeated text)
     """Overlapping-block matching: identical textured blocks repeated at one consistent offset suggest a cloned region."""
     g = _gray(_cap(img)).astype(np.float64)
     ii = np.pad(g, ((1, 0), (1, 0))).cumsum(0).cumsum(1)

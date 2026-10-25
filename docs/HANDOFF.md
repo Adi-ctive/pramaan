@@ -105,3 +105,28 @@ Reseed the live site: POST /api/admin/seed, then /api/admin/seed-next until done
     CER 17%, 352 ms per receipt. SIFTA after the fix: precision 62%, recall 76%, false alarms 47%.
   - RVL-CDIP sample complete: 5,600 documents, 350 of each of the 16 types (realdata/public/rvl_cdip/sample).
   - Still downloading at this point: photo forgery set (resumable), MIT Indoor full, CubiCasa to 1,000, IIIT archive.
+  - RVL-CDIP 5,600 (forensics 1.1.0): false alarms 25.4% (was 100%). Worst: handwritten 55%, adverts 46%, email 7%.
+    OCR on 1,000 of them also ran (numbers in docs/EVAL-LARGE.json, rvl.ocr).
+  - Split test (scratchpad, 704 RVL, 244+247 receipts, SIFTA, 12 synthetic): "much cleaner block" half of the noise rule has
+    0.6% false alarms on RVL, 0.8% on receipts, 3.1% on SIFTA real, and still 100% on synthetic tampering. The "much noisier
+    block" half caused nearly all false alarms (25% RVL, 71% receipts) with no separation on receipts. Copy-move pairs: synthetic
+    clones 1,891 to 2,202, genuine receipts 95th percentile 851, 99th 1,783.
+  - Applied, forensics 1.2.0 (UNTESTED when the session stopped): noise flag on the cleaner side only, copy-move min_pairs 500 to 1500.
+
+## STOPPED HERE (25 Oct, owner switching accounts)
+
+All processes were stopped on purpose. Nothing is running. Resume in this order:
+1. Verify forensics 1.2.0: `python tasks.py test` (28 must pass) and the synthetic forgery eval
+   (`evaluate.anomalies(pack, 12)` after `pack, _ = rulepack.parse(rulepack.load_file("aicte-demo-2026-27.yaml"))`). The pixel
+   rows and "copy-move inside page" must stay at F1 1.0. The two PDF-signature rows fail when run standalone because trust roots
+   come from the database. That is expected, not a bug.
+2. Rescore with 1.2.0: `python tasks.py eval-large rvl sroie sifta` (LITE), then `MODE=FULL python tasks.py eval-large rvl sroie`.
+3. Resume downloads: `python scripts/fetch_public_data.py forgery mit_full cubicasa_1000`. At the stop: forgery 6,309 files on
+   disk (images plus masks, about 13,800 total), MIT Indoor 360 of 15,620, CubiCasa 462 of 1,000. Then
+   `python tasks.py eval-large forgery mit_full cubicasa` (mit_full needs MODE=FULL).
+4. IIIT archive: 1,771,133,615 of 1,822,862,305 bytes. In realdata/public run
+   `curl -C - -o iiit.tar.gz https://cvit.iiit.ac.in/images/Projects/wordlevel-Indicscripts/IIIT-HW-Hindi_v1.tar.gz`,
+   then `python scripts/fetch_public_data.py iiit` and `MODE=FULL python tasks.py eval-large iiit`.
+5. Write the final numbers into docs/PROGRESS.md (new "Large public test set" section), DECISIONS.md (#32 noise cleaner side only,
+   #33 copy-move 1500, #34 date formats, #35 DocTamper not used), README (eval-large), this file and CONVERSATION-LOG.md.
+6. Commit as adictiveofficial, push, deploy (`vercel deploy --prod --yes`, forensics changed). Close every process you start.

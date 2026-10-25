@@ -36,6 +36,9 @@ first, then this. Add an entry every time the owner asks for something and every
 18. Asked to keep updating the project logs and conversation logs, because the weekly limit may end at any time and they will
     switch to a different Claude account. Doing: this file plus HANDOFF.md, committed and pushed as work goes.
 
+19. Said "halt everything, update the contexts, I'm changing the account". Stopped all processes, wrote the exact resume steps
+    under "STOPPED HERE" in docs/HANDOFF.md, committed and pushed.
+
 ## Where the current task stands
 
 See the newest "Session log" entry in docs/HANDOFF.md.
