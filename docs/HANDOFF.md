@@ -101,3 +101,7 @@ Reseed the live site: POST /api/admin/seed, then /api/admin/seed-next until done
     rate (SROIE/T-SROIE precision 51%, false alarms 74%). Classical checks cannot find real text tampering. A learned detector
     trained on T-SROIE is the next real step.
   - Date parser: two-digit years and month names added. Real receipt dates read went from 725 to 968 of 973.
+  - Measured (FULL, 25 Oct): OCR Model on 973 real SROIE receipts reads the total on 98.3% and the date on 95.3%, company name
+    CER 17%, 352 ms per receipt. SIFTA after the fix: precision 62%, recall 76%, false alarms 47%.
+  - RVL-CDIP sample complete: 5,600 documents, 350 of each of the 16 types (realdata/public/rvl_cdip/sample).
+  - Still downloading at this point: photo forgery set (resumable), MIT Indoor full, CubiCasa to 1,000, IIIT archive.
