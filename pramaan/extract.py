@@ -12,7 +12,8 @@ from PIL import Image
 PROVIDERS = {"ocr": "PDF text layer (LITE)", "classifier": "Keyword classifier (LITE)",
              "extractor": "Anchor/regex extractor (LITE)", "handwriting": "not available in LITE"}
 
-DATE_FORMATS = ["%d-%m-%Y", "%d/%m/%Y", "%Y-%m-%d", "%d %B %Y", "%d %b %Y", "%d.%m.%Y"]
+DATE_FORMATS = ["%d-%m-%Y", "%d/%m/%Y", "%Y-%m-%d", "%d %B %Y", "%d %b %Y", "%d.%m.%Y", "%d-%b-%Y", "%d/%b/%Y", "%Y/%m/%d", "%b %d, %Y",
+                "%d-%m-%y", "%d/%m/%y", "%d.%m.%y", "%d %b %y", "%d%m%Y"]  # two-digit years and month names: real receipts (SROIE)
 
 
 DEV_DIGITS = str.maketrans("०१२३४५६७८९", "0123456789")

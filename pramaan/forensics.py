@@ -6,7 +6,17 @@ import re
 import numpy as np
 from PIL import Image
 
-VERSION = "1.0.0"
+VERSION = "1.1.0"
+MAX_PIXELS = 6_000_000  # 600-dpi scans are downscaled first: the 3x3 median of a 35 MP page needs over 1 GB
+MIN_DIFF = 2.0  # grey levels. Real scanners clip paper to white, so noise ratios over a near-zero median mean nothing
+
+
+def _cap(img):
+    n = img.width * img.height
+    if n <= MAX_PIXELS:
+        return img
+    k = (MAX_PIXELS / n) ** 0.5
+    return img.resize((int(img.width * k), int(img.height * k)))
 
 
 def _gray(img):
@@ -42,8 +52,9 @@ def label(mask):
 
 
 def noise_map(img, block=16):
-    """Block std-dev of the high-pass residual, relative to the image median. Pasted clean patches stand out."""
-    g = _gray(img)
+    """Block std-dev of the high-pass residual, relative to the image median. Pasted clean patches stand out.
+    Returns (ratio, block, std, med)."""
+    g = _gray(_cap(img))
     res = g - _median3(g)
     h, w = (g.shape[0] // block) * block, (g.shape[1] // block) * block
     # measure noise on paper only: ink edges would hide a pasted patch that contains writing
@@ -61,12 +72,13 @@ def noise_map(img, block=16):
     ok = cnt >= block * block // 4
     med = float(np.median(std[ok])) if ok.any() else 1e-3
     ratio = np.where(ok, std / (med or 1e-3), 1.0)  # mostly-ink blocks are neutral
-    return ratio, block
+    return ratio, block, np.where(ok, std, med), med
 
 
 def noise_check(img, threshold=0.65):
-    ratio, block = noise_map(img)
-    comps = label((ratio < 0.35) | (ratio > 3.0))
+    ratio, block, std, med = noise_map(img)
+    # a block is odd only if its noise differs from the page both in ratio and by a visible amount
+    comps = label(((ratio < 0.35) | (ratio > 3.0)) & (np.abs(std - med) > MIN_DIFF))
     best = max(comps, default=None)
     area = best[0] if best else 0
     score = round(min(1.0, area / 12), 3)
@@ -86,7 +98,7 @@ def _jet(v):
 
 
 def heatmap_png(img):
-    ratio, block = noise_map(img)
+    ratio, block, _, _ = noise_map(img)
     dev = np.clip(np.abs(np.log(np.maximum(ratio, 1e-3))) / 2.0, 0, 1)
     hm = Image.fromarray(_jet(dev)).resize((img.width, img.height), Image.NEAREST)
     out = Image.blend(img.convert("RGB"), hm, 0.45)
@@ -98,6 +110,7 @@ def heatmap_png(img):
 
 
 def ela_score(img, q=90):
+    img = _cap(img)
     b = io.BytesIO()
     img.convert("RGB").save(b, "JPEG", quality=q)
     re_img = Image.open(io.BytesIO(b.getvalue()))
@@ -110,7 +123,7 @@ def ela_score(img, q=90):
 
 def copy_move(img, block=16, step=2, min_shift=40, quant=6, min_pairs=500):
     """Overlapping-block matching: identical textured blocks repeated at one consistent offset suggest a cloned region."""
-    g = _gray(img).astype(np.float64)
+    g = _gray(_cap(img)).astype(np.float64)
     ii = np.pad(g, ((1, 0), (1, 0))).cumsum(0).cumsum(1)
     ii2 = np.pad(g * g, ((1, 0), (1, 0))).cumsum(0).cumsum(1)
     ys = np.arange(0, g.shape[0] - block, step)

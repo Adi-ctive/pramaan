@@ -1,0 +1,86 @@
+{
+ "sifta": {
+  "documents": 192,
+  "errors": 0,
+  "ms_per_doc": 506.3,
+  "tamper": {
+   "tampered": 96,
+   "genuine": 96,
+   "tp": 73,
+   "fp": 45,
+   "fn": 23,
+   "tn": 51,
+   "precision": 0.6186,
+   "recall": 0.7604,
+   "f1": 0.6822,
+   "false_alarm_rate": 0.4688
+  },
+  "seconds": 19.2,
+  "mode": "LITE"
+ },
+ "mode": "LITE",
+ "date": "25 Oct 2026",
+ "total_items": 7747,
+ "rvl": {
+  "documents": 5334,
+  "errors": 0,
+  "flagged": 5334,
+  "false_alarm_rate": 1.0,
+  "escalated": 5334,
+  "ms_per_doc": 276.2,
+  "workers": 6,
+  "per_class": {
+   "email": {
+    "docs": 2202,
+    "flagged": 2202,
+    "rate": 1.0
+   },
+   "file folder": {
+    "docs": 2527,
+    "flagged": 2527,
+    "rate": 1.0
+   },
+   "form": {
+    "docs": 605,
+    "flagged": 605,
+    "rate": 1.0
+   }
+  },
+  "seconds": 247.4,
+  "mode": "LITE"
+ },
+ "cubicasa": {
+  "plans": 262,
+  "rooms_true": 3325,
+  "rooms_found": 1443,
+  "room_recall": 0.222,
+  "room_precision": 0.516,
+  "note": "Rooms matched by box overlap (IoU >= 0.5). No scale in these images, so areas in m\u00b2 are not measured.",
+  "seconds": 546.7,
+  "mode": "LITE"
+ },
+ "sroie": {
+  "genuine_receipts": 973,
+  "tampered_receipts": 986,
+  "errors": 0,
+  "ms_per_doc": 777.7,
+  "tamper": {
+   "tampered": 986,
+   "genuine": 973,
+   "tp": 748,
+   "fp": 723,
+   "fn": 238,
+   "tn": 250,
+   "precision": 0.5085,
+   "recall": 0.7586,
+   "f1": 0.6089,
+   "false_alarm_rate": 0.7431
+  },
+  "dates_parsed": {
+   "receipts": 973,
+   "parsed": 725
+  },
+  "seconds": 257.4,
+  "mode": "LITE"
+ }
+}

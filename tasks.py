@@ -7,6 +7,7 @@
   eval-real  score real files in realdata/ against realdata/truth.csv (offline)
   worker   local AI worker: runs agents on this GPU for the hosted site (needs .env.worker with MONGODB_URI)
   fetch-public / eval-public  public dataset subsets (MIT Indoor 67, CubiCasa5K, IIIT-HW-Dev) and their scores
+  eval-large  thousands of real public files: tamper false alarms and detection, OCR, room type -> docs/EVAL-LARGE.md
   down     stop servers started by `up`             cron    run nightly jobs once
 Use MODE=FULL (env or .env) for GPU models; default is LITE."""
 import base64
@@ -134,6 +135,12 @@ def eval_public():
     sys.exit(sh([PY, "-m", "pramaan.evaluate_public"]))
 
 
+def eval_large():
+    """Scores thousands of real public files (RVL-CDIP, SROIE, T-SROIE, SIFTA, photo forgery, MIT Indoor, CubiCasa5K, IIIT-HW-Dev).
+    Writes docs/EVAL-LARGE.md. LITE runs the tamper checks, MODE=FULL adds OCR, room type and Hindi handwriting."""
+    sys.exit(sh([PY, "-m", "pramaan.evaluate_large"] + sys.argv[2:]))
+
+
 def worker():
     """Local AI worker for the hosted site: reads .env.worker (MONGODB_URI of the live database), runs agents on this GPU."""
     p = os.path.join(ROOT, ".env.worker")
@@ -155,7 +162,7 @@ def cron():
     print(http("GET", "http://127.0.0.1:8010/api/cron/daily", tok))
 
 
-TARGETS = {"secrets": secrets_, "up": up, "down": down, "seed": seed, "demo": demo, "test": test, "e2e": e2e, "eval": eval_, "eval-real": eval_real, "fetch-public": fetch_public, "worker": worker, "eval-public": eval_public,
+TARGETS = {"secrets": secrets_, "up": up, "down": down, "seed": seed, "demo": demo, "test": test, "e2e": e2e, "eval": eval_, "eval-real": eval_real, "fetch-public": fetch_public, "worker": worker, "eval-public": eval_public, "eval-large": eval_large,
            "probe": probe, "cron": cron}
 
 if __name__ == "__main__":

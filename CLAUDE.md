@@ -2,6 +2,7 @@
 
 AI-assisted validation of AICTE approval applications: completeness, expiry, cross-document and records consistency,
 tamper indicators, issuer verification (signed QR, PDF signatures, reference lookup), infrastructure photo checks, alerts, audit chain.
+New session or account: read docs/HANDOFF.md, then docs/CONVERSATION-LOG.md. Keep both current and pushed.
 Spec: docs/pramaan-spec/. Differences from the spec and why: docs/DECISIONS.md. Status: docs/PROGRESS.md.
 Backend: FastAPI (pramaan/), MongoDB (Atlas or mongomock). Console: React (src/). Widget: public/widget/v1/pramaan.js.
 Mock portals: public/host-a, public/host-b. LITE mode on CPU (hosted on Vercel); FULL mode locally on the GPU (requirements-full.txt).
