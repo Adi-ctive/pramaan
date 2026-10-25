@@ -1,5 +1,6 @@
 """Deterministic validation pipeline (02_ARCHITECTURE.md §5). Every finding becomes a Flag (§9) with evidence;
 severity comes only from the rule pack. A crashing check yields a CHECK_ERROR flag, never a failed report."""
+import io
 import json
 import os
 import re
@@ -39,7 +40,12 @@ def active_pack(key):
 
 
 # ---------- per-document processing (stages B1-B12)
-def process_doc(doc, pack, app):
+IMG_CACHE = {}  # doc id -> decoded page images, so agent tools reuse them within one run
+
+
+def process_doc(doc, pack, app, opts=None):
+    """opts (agent mode): {"read": "ocr"|"manual"} for scans, {"defer_forensics": True} to leave image forensics to the agents."""
+    opts = opts or {}
     data = get_blob(doc["blob_id"])
     th = pack.get("thresholds", {})
     res = {"stages": [], "pages": [], "fields": {}, "images": [], "flags_raw": []}
@@ -93,7 +99,7 @@ def process_doc(doc, pack, app):
         else:
             res["type"], res["type_conf"] = None, 0
             img0 = (extract.page_images(pdf, 0) or [extract.render_page(pdf, 0, 2)])[0]
-            o = stage("ocr_htr", lambda: read_scanned(img0, pack, doc["slot"], th))
+            o = None if opts.get("read") == "manual" else stage("ocr_htr", lambda: read_scanned(img0, pack, doc["slot"], th))
             if o:
                 res.update(o)
                 hits = extract.injection_hits(o.get("text", ""))
@@ -128,9 +134,12 @@ def process_doc(doc, pack, app):
 
     if doc["slot"] == "FLOOR_PLAN" and not res.get("floor_plan") and imgs:
         res["floor_plan_raster"] = stage("floor_plan_raster", lambda: extract.floor_plan_raster(imgs[0]))
+    IMG_CACHE[doc["id"]] = imgs[:2]
     for k, im in enumerate(imgs[:2]):
         entry = {"hash": forensics.dhash(im)}
-        if doc["slot"] != "INFRA_PHOTOS":
+        if doc["slot"] != "INFRA_PHOTOS" and opts.get("defer_forensics"):
+            pass  # the Forensics Agent runs the tiers; complete_forensics() fills anything it skipped
+        elif doc["slot"] != "INFRA_PHOTOS":
             nc = stage("noise_residual", lambda: forensics.noise_check(im, th.get("noise_suspicion", 0.65)))
             entry["noise"] = nc
             # escalation: deeper checks only when the cheap one is borderline or worse
@@ -153,6 +162,67 @@ def process_doc(doc, pack, app):
     if doc["slot"] != "INFRA_PHOTOS":
         res["htr_needed"] = bool(res.get("scanned"))
     return res
+
+
+def forensics_tier(doc_id, res, th, tier):
+    """Runs one forensics tier on a document's images and records it in res (same keys as the DAG).
+    cheap: ELA + noise residual (+ PDF metadata already in res). deep: copy-move and the noise heatmap."""
+    out = []
+    for k, im in enumerate(IMG_CACHE.get(doc_id) or []):
+        if k >= len(res["images"]):
+            break
+        e = res["images"][k]
+        if tier == "cheap":
+            e["ela"] = forensics.ela_score(im)
+            e["noise"] = forensics.noise_check(im, th.get("noise_suspicion", 0.65))
+            out.append({"image": k, "ela": e["ela"], "noise": e["noise"]["score"]})
+        else:
+            e["copy_move"] = forensics.copy_move(im)
+            if (e.get("noise") or {}).get("suspicious") and not e.get("heatmap"):
+                e["heatmap"] = put_blob(forensics.heatmap_png(im), "png")
+            out.append({"image": k, "copy_move_pairs": e["copy_move"]["pairs"], "copy_move_suspicious": e["copy_move"]["suspicious"]})
+    return out
+
+
+def complete_forensics(doc, res, th):
+    """DAG completion: the mandatory noise check (and its heatmap) for any image the agents left unchecked."""
+    done = []
+    for k, im in enumerate(IMG_CACHE.get(doc["id"]) or []):
+        if doc["slot"] == "INFRA_PHOTOS" or k >= len(res["images"]):
+            continue
+        e = res["images"][k]
+        if "noise" not in e:
+            e["noise"] = forensics.noise_check(im, th.get("noise_suspicion", 0.65))
+            done.append("noise_map")
+        if e["noise"]["suspicious"] and not e.get("heatmap"):
+            e["heatmap"] = put_blob(forensics.heatmap_png(im), "png")
+            done.append("heatmap")
+    return done
+
+
+def text_forensics(doc, res):
+    """Text-level forensics on digital PDFs: a field value set in a different font or size from its own line suggests a pasted edit."""
+    import pdfplumber
+    out = []
+    data = get_blob(doc["blob_id"])
+    with pdfplumber.open(io.BytesIO(data)) as pdf:
+        for fname, f in (res.get("fields") or {}).items():
+            if not f.get("bbox") or f.get("page") is None or f["page"] >= len(pdf.pages):
+                continue
+            page = pdf.pages[f["page"]]
+            W, H = page.width, page.height
+            x, y, w, h = f["bbox"]
+            band = [c for c in page.chars if abs((c["top"] + c["bottom"]) / 2 - (y + h / 2) * H) < h * H]
+            val = [c for c in band if x * W - 1 <= c["x0"] <= (x + w) * W + 1]
+            lab = [c for c in band if c["x1"] < x * W - 1]
+            if not val or not lab:
+                continue
+            vf = {(c["fontname"], round(c["size"])) for c in val}
+            lf = {(c["fontname"], round(c["size"])) for c in lab}
+            if len(vf) > 1:  # mixed fonts inside one value (label fonts can differ legitimately, e.g. Hindi labels)
+                out.append({"field": fname, "value_fonts": sorted(map(str, vf)), "label_fonts": sorted(map(str, lf)), "bbox": f["bbox"], "page": f["page"]})
+    res["text_forensics"] = out
+    return out
 
 
 def _deskew(img):
@@ -255,11 +325,14 @@ def detect_regions(pdf, qr=None):
     return out
 
 
-def doc_stage(d, pack, app, ref, route=None, trace=None):
-    """Per-document tools in order: process, then verification routes. `route` lets the Verification Agent pick methods."""
+def doc_stage(d, pack, app, ref, route=None, trace=None, opts=None, post=None):
+    """Per-document tools in order: process, then verification routes. `route` lets the Verification Agent pick methods,
+    `opts` lets the Document/Forensics Agents steer reading and forensics, `post(r)` runs agent work before verification."""
     db = get_db()
     app_id = app["id"]
-    r = process_doc(d, pack, app)
+    r = process_doc(d, pack, app, opts)
+    if post:
+        post(r)
     tax = pack["taxonomy"].get(d["slot"], {})
     methods = route(r) if callable(route) else route if route is not None else tax.get("verification", [])
     vids = []
@@ -329,8 +402,13 @@ def _fe(doc, fname, f):
 
 
 # ---------- application-level validation
+def agent_mode():
+    """AGENT_MODE=on|off (default on in FULL, off in LITE). LITE always runs the DAG alone."""
+    return os.environ.get("AGENT_MODE", "on" if MODE == "FULL" else "off")
+
+
 def use_agents():
-    return os.environ.get("AGENTS", "auto") == "on" or (os.environ.get("AGENTS", "auto") == "auto" and MODE == "FULL")
+    return agent_mode() == "on" and MODE == "FULL"
 
 
 def run(app_id, changed=None, actor="system", pack_override=None, dry=False, agents_on=None):
@@ -348,18 +426,24 @@ def run(app_id, changed=None, actor="system", pack_override=None, dry=False, age
     # B: per-document stages, reusing cached results for unchanged documents
     agent = None
     if not dry and (use_agents() if agents_on is None else agents_on):
-        from . import agents
-        agent = agents.Run(app, pack, ref, timeline)
+        todo = [d for d in docs if not (d.get("result") and (changed is None or d["id"] not in changed) and d.get("pack_ref") == ref)]
+        try:
+            from . import agents
+            agent = agents.Run(app, pack, ref, timeline, docs=todo)
+        except Exception as e:  # LLM unreachable or the Orchestrator failed: the DAG runs alone
+            timeline.append({"stage": "agent_fallback", "status": "error", "note": f"agents unavailable ({type(e).__name__}: {str(e)[:120]}) -> DAG"})
     for d in docs:
         if d.get("result") and (dry or ((changed is None or d["id"] not in changed) and d.get("pack_ref") == ref)):
             timeline.append({"stage": f"doc:{d['slot']}", "status": "reused", "doc_id": d["id"], "ms": 0})
             continue
         t = time.perf_counter()
         try:
-            r = agent.process(d) if agent else doc_stage(d, pack, app, ref)
+            r = agent.process(d) if agent and not agent.failed else doc_stage(d, pack, app, ref)
         except Exception as e:  # any agent failure: deterministic pipeline completes the stage
-            timeline.append({"stage": "agent_fallback", "status": "error", "note": f"{type(e).__name__}: {str(e)[:120]} -> DAG"})
-            agent = None
+            timeline.append({"stage": "agent_fallback", "status": "error", "note": f"{type(e).__name__}: {str(e)[:120]} -> DAG finished the remaining stages"})
+            if agent:
+                agent.ctx.trace("DAG", "fallback", {}, f"{type(e).__name__}: {str(e)[:120]} -> DAG finished the remaining stages")
+                agent.failed = True
             r = doc_stage(d, pack, app, ref)
         timeline.append({"stage": f"doc:{d['slot']}", "status": "ran", "doc_id": d["id"],
                          "ms": round((time.perf_counter() - t) * 1000), "substages": r["stages"]})
@@ -374,6 +458,14 @@ def run(app_id, changed=None, actor="system", pack_override=None, dry=False, age
     for s, ds in by_slot.items():
         if s != "INFRA_PHOTOS":
             ctx[s] = {k: v["value"] for k, v in ds[0]["result"].get("fields", {}).items()}
+    agent_flags = []
+    if agent and not agent.failed:
+        try:
+            agent_flags = agent.app_level(docs)
+        except Exception as e:
+            timeline.append({"stage": "agent_fallback", "status": "error", "note": f"Consistency/Infrastructure Agents: {type(e).__name__}: {str(e)[:100]} -> DAG rules only"})
+            agent.ctx.trace("DAG", "fallback", {}, f"{type(e).__name__}: {str(e)[:100]} -> DAG rules only")
+            agent.failed = True
 
     def check(name, fn):
         t = time.perf_counter()
@@ -596,6 +688,16 @@ def run(app_id, changed=None, actor="system", pack_override=None, dry=False, age
                           f"{cm['pairs']} keypoint pairs share one displacement (possible copy-move).",
                           [{"type": "metadata", "document_id": d["id"], "key": "copy_move_pairs", "value": cm["pairs"]}],
                           doc_id=d["id"], key="copymove", detector="Tamper Localiser (copy-move)")
+            for tf in r.get("text_forensics", []):
+                F.add("TEXT_FONT_OUTLIER", "ANOMALY", f"{lbl}: '{tf['field'].replace('_', ' ')}' set in a different font - indicator, requires verification",
+                      f"Value fonts {tf['value_fonts']} vs label fonts {tf['label_fonts']} on the same line.",
+                      [{"type": "region", "document_id": d["id"], "page": tf["page"], "bbox": tf["bbox"]}], doc_id=d["id"], key=tf["field"],
+                      detector="Text-level forensics (Forensics Agent)")
+            for c in r.get("conflicts", []):
+                F.add("EXTRACTION_CONFLICT", "EXTRACTION", f"{lbl}: readers disagree on '{c['field'].replace('_', ' ')}'",
+                      f"OCR Model read '{c['ocr']}', Handwriting Model read '{c['htr']}' even after a 2x re-read. A person should read it.",
+                      [{"type": "region", "document_id": d["id"], "page": 0, "bbox": c["bbox"]}], doc_id=d["id"], key=c["field"],
+                      detector="Document Agent (reader comparison)", conf=0.5)
             for pf in r.get("pdf_findings", []):
                 F.add("PDF_EDIT_INDICATOR", "ANOMALY", f"{lbl}: PDF changed after creation - indicator, requires verification",
                       pf["reason"], [{"type": "metadata", "document_id": d["id"], "key": pf["key"], "value": pf["value"]}],
@@ -720,6 +822,8 @@ def run(app_id, changed=None, actor="system", pack_override=None, dry=False, age
                               action=rule.get("action"))
     check("infrastructure", c_infra)
 
+    for ef in agent_flags:  # agent-run checks (extra entity pairs); deterministic rule flags are already in F
+        F.add(**ef)
     if dry:
         return F.items
     # persist flags, carry dispositions forward
@@ -747,18 +851,21 @@ def run(app_id, changed=None, actor="system", pack_override=None, dry=False, age
     counts = {s: sum(1 for f in open_f if f["severity"] == s) for s in ("HIGH", "MEDIUM", "LOW")}
     vstat = {"verified": sum(1 for v in vers if v["status"] == "VERIFIED"), "total": len(vers)}
     diff = records_diff(a, rec, ctx)
-    summary = None
-    if agent:
+    summary, fix_list = None, None
+    if agent and not agent.failed:
         try:
             summary = agent.summarize(out)
+            fix_list = agent.fix_list(out)
         except Exception as e:
             timeline.append({"stage": "case_writer", "status": "error", "note": f"{str(e)[:100]} -> template"})
+            agent.ctx.trace("DAG", "fallback", {}, f"Case Writer: {str(e)[:100]} -> template")
     summary = summary or case_summary(out, pack)
     elapsed = round((time.perf_counter() - t0) * 1000)
     rep = {"id": new_id("RPT"), "app_id": app_id, "version": version, "created": now().isoformat(), "mode": MODE, "pack": ref,
            "flag_ids": [f["id"] for f in out], "resolved_flag_ids": resolved, "timeline": timeline, "records_diff": diff,
            "summary": summary, "risk": risk, "counts": counts, "verification": vstat, "elapsed_ms": elapsed,
-           "changed": changed, "agents": bool(agent), "providers": providers.status()}
+           "changed": changed, "agents": bool(agent), "agent_mode": agent_mode(), "providers": providers.status(),
+           "institution_summary": fix_list, "agent_usage": agent.usage() if agent else None}
     db.reports.insert_one(dict(rep))
     status = "READY_FOR_REVIEW"
     db.applications.update_one({"id": app_id}, {"$set": {"report_version": version, "risk": risk, "counts": counts,

@@ -5,7 +5,8 @@ tamper indicators, issuer verification (signed QR, PDF signatures, reference loo
 Spec: docs/pramaan-spec/. Differences from the spec and why: docs/DECISIONS.md. Status: docs/PROGRESS.md.
 Backend: FastAPI (pramaan/), MongoDB (Atlas or mongomock). Console: React (src/). Widget: public/widget/v1/pramaan.js.
 Mock portals: public/host-a, public/host-b. LITE mode on CPU (hosted on Vercel); FULL mode locally on the GPU (requirements-full.txt).
-Models are behind pramaan/providers.py and named by role. Agents (LangGraph) in pramaan/agents.py fall back to the DAG in pramaan/engine.py.
+Models are behind pramaan/providers.py and named by role. Agents (LangGraph, Ollama qwen2.5:7b-instruct) in pramaan/agents/ fall back to the DAG in pramaan/engine.py.
+Local AI worker (pramaan/worker.py) runs FULL mode plus agents for the hosted site; it polls Atlas, no port opened.
 
 Live: https://pramaan-sih26.vercel.app (Vercel project "pramaan", project domain). Atlas: Dishaara cluster, database "pramaan".
 
@@ -22,7 +23,7 @@ Live: https://pramaan-sih26.vercel.app (Vercel project "pramaan", project domain
 
 ## Commands (python tasks.py <target>; Makefile wraps the same)
 - secrets, up, down, seed, demo, test, e2e, eval, probe, cron
-- FULL mode: MODE=FULL in env or .env. Agents: AGENTS=on|off|auto.
+- FULL mode: MODE=FULL in env or .env. Agents: AGENT_MODE=on|off (needs Ollama). Worker: `python tasks.py worker` (reads .env.worker).
 - Deploy: `vercel deploy --prod --yes`. Python 3.14 on Vercel, bundle under 500 MB (no OpenCV, no torch).
 - Seed Atlas: POST /api/admin/seed then /api/admin/seed-next until done (X-Seed-Token from private/SECRETS.md).
 - Secrets live in Vercel env and private/ (gitignored). Never commit them.

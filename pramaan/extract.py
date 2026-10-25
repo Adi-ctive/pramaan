@@ -140,7 +140,8 @@ def read_qr(pdf):
 
 
 INJECTION = [r"ignore (all |any )?(previous|prior|above) instructions", r"system prompt", r"you are now",
-             r"mark (this|the) application as (approved|verified|clean)", r"disregard .{0,30}rules"]
+             r"mark (this|the) (application|document) (as )?(approved|verified|clean|genuine)", r"disregard .{0,30}rules",
+             r"(^|\n)\s*system\s*:"]
 
 
 def injection_hits(text):

@@ -207,7 +207,8 @@ class ReasoningLLM:
     role = "Reasoning LLM"
 
     def available(self):
-        return MODE == "FULL" and self._m() is not None or bool(os.environ.get("GROQ_KEY"))
+        from .agents import llm as ollama
+        return ollama.reachable() or MODE == "FULL" and self._m() is not None or bool(os.environ.get("GROQ_KEY"))
 
     def _m(self):
         if MODE != "FULL":
@@ -221,7 +222,11 @@ class ReasoningLLM:
         return _load("llm", mk)
 
     def complete(self, system, user, max_tokens=400):
-        """Document-derived text must already be wrapped in <document_data> by the caller."""
+        """Document-derived text must already be wrapped in <document_data> by the caller. Prefers the local Ollama model."""
+        from .agents import llm as ollama
+        if ollama.reachable():
+            msg, *_ = ollama.chat([{"role": "system", "content": system}, {"role": "user", "content": user}], max_tokens=max_tokens)
+            return msg.get("content") or ""
         key = os.environ.get("GROQ_KEY")
         if MODE != "FULL" and key:
             import httpx

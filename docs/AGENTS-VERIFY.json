@@ -1,0 +1,177 @@
+{
+ "model": "qwen2.5:7b-instruct",
+ "mode": "LITE",
+ "apps": {
+  "GOLDEN-A": {
+   "dag_seconds": 5.4,
+   "agent_seconds": 137.0,
+   "agents_ran": true,
+   "usage": {
+    "llm_calls": 66,
+    "tokens_in": 48941,
+    "tokens_out": 2506,
+    "model": "qwen2.5:7b-instruct",
+    "agent_seconds": 131.7
+   },
+   "dag_flags": 0,
+   "agent_flags": 0,
+   "missing_rule_flags": [],
+   "extra_flags": [],
+   "plan": "plan for 11 documents: OCR for ['COMPUTER_LAB_1__01.jpg', 'COMPUTER_LAB_1__02.jpg'], forensics on 9, verification on 5",
+   "forensics_escalated_on": [],
+   "fallbacks": [],
+   "dag_completions": [],
+   "summary": [
+    {
+     "text": "All configured checks passed. No open findings.",
+     "flags": []
+    }
+   ],
+   "summary_ok": true
+  },
+  "PROBLEM-A": {
+   "dag_seconds": 7.0,
+   "agent_seconds": 159.9,
+   "agents_ran": true,
+   "usage": {
+    "llm_calls": 64,
+    "tokens_in": 43880,
+    "tokens_out": 3075,
+    "model": "qwen2.5:7b-instruct",
+    "agent_seconds": 155.3
+   },
+   "dag_flags": 12,
+   "agent_flags": 12,
+   "missing_rule_flags": [],
+   "extra_flags": [],
+   "plan": "plan for 10 documents: OCR for ['affidavit_scan.pdf', 'floor_plan.pdf'], forensics on 8, verification on 4",
+   "forensics_escalated_on": [
+    "affidavit_scan.pdf"
+   ],
+   "fallbacks": [],
+   "dag_completions": [],
+   "summary": [
+    {
+     "text": "Building Completion Certificate is missing, requiring upload.",
+     "flags": [
+      "FLG-5896DFB1"
+     ]
+    },
+    {
+     "text": "Fire Safety NOC has expired, needing renewal.",
+     "flags": [
+      "FLG-7EAB58DC"
+     ]
+    },
+    {
+     "text": "General Affidavit requires manual review due to possible local alteration.",
+     "flags": [
+      "FLG-93323A51"
+     ]
+    },
+    {
+     "text": "Multiple discrepancies found in intake and lab claims, indicating potential inaccuracies.",
+     "flags": [
+      "FLG-70B0B513",
+      "FLG-C2934848"
+     ]
+    },
+    {
+     "text": "Accreditation Certificate shows a qr mismatch, requiring verification.",
+     "flags": [
+      "FLG-BDE03877"
+     ]
+    }
+   ],
+   "summary_ok": true
+  },
+  "GOLDEN-B": {
+   "dag_seconds": 4.8,
+   "agent_seconds": 56.1,
+   "agents_ran": true,
+   "usage": {
+    "llm_calls": 32,
+    "tokens_in": 18441,
+    "tokens_out": 956,
+    "model": "qwen2.5:7b-instruct",
+    "agent_seconds": 51.5
+   },
+   "dag_flags": 0,
+   "agent_flags": 0,
+   "missing_rule_flags": [],
+   "extra_flags": [],
+   "plan": "plan for 4 documents: OCR for none, forensics on 4, verification on 3",
+   "forensics_escalated_on": [],
+   "fallbacks": [],
+   "dag_completions": [],
+   "summary": [
+    {
+     "text": "All configured checks passed. No open findings.",
+     "flags": []
+    }
+   ],
+   "summary_ok": true
+  },
+  "PROBLEM-B": {
+   "dag_seconds": 4.8,
+   "agent_seconds": 77.6,
+   "agents_ran": true,
+   "usage": {
+    "llm_calls": 38,
+    "tokens_in": 21663,
+    "tokens_out": 1401,
+    "model": "qwen2.5:7b-instruct",
+    "agent_seconds": 73.0
+   },
+   "dag_flags": 3,
+   "agent_flags": 3,
+   "missing_rule_flags": [],
+   "extra_flags": [],
+   "plan": "plan for 4 documents: OCR for ['fire_clearance.pdf', 'building_certificate.pdf'], forensics on 4, verification on 3",
+   "forensics_escalated_on": [],
+   "fallbacks": [],
+   "dag_completions": [
+    "fire_clearance.pdf: DAG ran qr, ref_lookup (not chosen by the agent)"
+   ],
+   "summary": [
+    {
+     "text": "The Fire Safety NOC document appears to be a Building Completion Certificate, which is inconsistent.",
+     "flags": [
+      "FLG-4EAE49F5"
+     ]
+    },
+    {
+     "text": "The Society/Trust Registration Certificate has an implausible date, as it is on or after the institution's establishment date.",
+     "flags": [
+      "FLG-5744AB89"
+     ]
+    },
+    {
+     "text": "The Building Completion Certificate's reference lookup source is unavailable, due to the issuer service not responding.",
+     "flags": [
+      "FLG-C71A3EAF"
+     ]
+    }
+   ],
+   "summary_ok": true
+  }
+ },
+ "injection": {
+  "fee_doc_flags_dag": [
+   "('INJECTION_INDICATOR', None, 'DOC-3BDC3F01', 'MEDIUM')"
+  ],
+  "fee_doc_flags_agent": [
+   "('INJECTION_INDICATOR', None, 'DOC-3BDC3F01', 'MEDIUM')"
+  ],
+  "fee_statuses_same": true
+ },
+ "fallback": {
+  "seconds": 32.2,
+  "report_version": 4,
+  "agents_started": false,
+  "fallback_events": [
+   "agents unavailable (ReadError: [WinError 10054] An existing connection was forcibly closed by the remote host) -> DAG"
+  ],
+  "flags_after": 12
+ }
+}

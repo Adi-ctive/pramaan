@@ -48,7 +48,12 @@ def health():
     except Exception as e:
         dbs = f"error: {str(e)[:80]}"
     from . import providers
-    return {"db": dbs, "mode": engine.MODE, "providers": providers.status(), "agents": engine.use_agents(),
+    from .agents import llm as ollama
+    w = get_db().workers.find_one({"_id": "local"}) or {}
+    online = bool(w) and (now() - datetime.fromisoformat(w["ts"])).total_seconds() < 45
+    return {"db": dbs, "mode": engine.MODE, "providers": providers.status(), "agents": engine.use_agents(), "agent_mode": engine.agent_mode(),
+            "llm": {"model": ollama.MODEL, "reachable": ollama.reachable() if engine.MODE == "FULL" else False},
+            "local_ai": {"online": online, "model": w.get("model"), "mode": w.get("mode"), "last_seen": w.get("ts")},
             "object_detector": "vision model" if os.environ.get("GROQ_KEY") else "classical counter (LITE)",
             "store": "atlas" if os.environ.get("MONGODB_URI") else "in-memory"}
 
@@ -775,6 +780,49 @@ def report_pdf(app_id: str, view: str = "full", user=Depends(require("view_queue
 def traces(app_id: str, user=Depends(require("view_queue"))):
     get_app(user, app_id)
     return [clean(t) for t in get_db().agent_traces.find({"app_id": app_id}).sort("ts", 1).limit(400)]
+
+
+def timeline_lines(app_id):
+    """Readable processing timeline for the latest report: stages, agent steps and fallback events."""
+    db = get_db()
+    rep = db.reports.find_one({"app_id": app_id}, sort=[("version", -1)]) or {}
+    docs = {d["id"]: d["filename"] for d in db.documents.find({"app_id": app_id}, {"id": 1, "filename": 1})}
+    lines = []
+    for t in rep.get("timeline", []):
+        st = t["stage"]
+        if st.startswith("agent:"):
+            lines.append({"kind": "agent", "text": f"{st[6:]}: {t.get('note', '')}"})
+        elif st == "agent_fallback":
+            lines.append({"kind": "fallback", "text": f"Fallback: {t.get('note', '')}"})
+        elif st.startswith("doc:"):
+            what = "re-used from the last run" if t["status"] == "reused" else f"checked in {t.get('ms', 0)} ms"
+            lines.append({"kind": "doc", "text": f"{docs.get(t.get('doc_id'), st[4:])}: {what}"})
+        elif t.get("status") == "error":
+            lines.append({"kind": "error", "text": f"{st}: {t.get('error') or t.get('note')}"})
+    for tr in db.agent_traces.find({"app_id": app_id, "report_id": rep.get("id"), "agent": "DAG"}):
+        lines.append({"kind": "fallback", "text": f"DAG: {tr['note']}"})
+    return {"report_version": rep.get("version"), "agents": rep.get("agents"), "agent_mode": rep.get("agent_mode"),
+            "usage": rep.get("agent_usage"), "elapsed_ms": rep.get("elapsed_ms"), "lines": lines}
+
+
+@app.get("/api/applications/{app_id}/timeline")
+def timeline(app_id: str, user=Depends(require("view_queue"))):
+    get_app(user, app_id)
+    return timeline_lines(app_id)
+
+
+@app.get("/console/v1/applications/{app_id}/timeline")
+def timeline_console(app_id: str, user=Depends(require("view_queue"))):
+    return timeline(app_id, user)
+
+
+@app.post("/api/applications/{app_id}/run-local")
+def run_local(app_id: str, agents: bool = True, user=Depends(require("dispose_flags"))):
+    """Asks the local AI worker (a laptop with a GPU and Ollama) to re-check this application, with agents unless agents=false."""
+    get_app(user, app_id)
+    get_db().applications.update_one({"id": app_id}, {"$set": {"agent_request": {"status": "pending", "agents": agents, "by": user["sub"], "ts": now().isoformat()}}})
+    audit.record(user["sub"], "application.request_local_ai", app_id)
+    return {"ok": True}
 
 
 @app.get("/api/outbox")

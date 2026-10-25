@@ -12,7 +12,7 @@ taxonomy:
     retention_days: 2555
     keywords: ["society registration", "registrar of societies"]
     fields:
-      society_name: {anchor: "Name of Society", type: entity_name, required: true}
+      society_name: {entity: society, anchor: "Name of Society", type: entity_name, required: true}
       reg_no: {anchor: "Registration No", type: string, required: true, pattern: "^SR/[A-Z]{2}/\\d{4}/\\d{4,6}$"}
       issued_on: {anchor: "Date of Registration", type: date, required: true}
       issuer: {anchor: "Issued by", type: string}
@@ -23,7 +23,7 @@ taxonomy:
     retention_days: 2555
     keywords: ["fire safety", "no objection certificate", "fire service"]
     fields:
-      addressee: {anchor: "Issued to", type: entity_name, required: true}
+      addressee: {entity: society, anchor: "Issued to", type: entity_name, required: true}
       ref_no: {anchor: "NOC No", type: string, required: true, pattern: "^FS/[A-Z]{2}/\\d{4}/\\d{5}$"}
       issued_on: {anchor: "Date of issue", type: date, required: true}
       valid_to: {anchor: "Valid until", type: date, required: true}
@@ -36,7 +36,7 @@ taxonomy:
     retention_days: 2555
     keywords: ["completion certificate", "building plan"]
     fields:
-      owner: {anchor: "Owner", type: entity_name, required: true}
+      owner: {entity: society, anchor: "Owner", type: entity_name, required: true}
       ref_no: {anchor: "Certificate No", type: string, required: true, pattern: "^BC/[A-Z]{2}/\\d{4}/\\d{4,6}$"}
       issued_on: {anchor: "Date of issue", type: date, required: true}
       issuer: {anchor: "Issuing authority", type: string}
@@ -45,7 +45,7 @@ taxonomy:
     label: "Affiliation Fee Receipt"
     keywords: ["fee receipt", "amount received"]
     fields:
-      payer: {anchor: "Received from", type: entity_name, required: true}
+      payer: {entity: society, anchor: "Received from", type: entity_name, required: true}
       ref_no: {anchor: "Receipt No", type: string, required: true, pattern: "^TR/\\d{4}/\\d{6}$"}
       amount: {anchor: "Amount (INR)", type: number, required: true}
       paid_on: {anchor: "Paid on", type: date, required: true}
@@ -110,6 +110,8 @@ severity:
   HTR_LOW_CONFIDENCE: LOW
   EXTRACTION_LOW_CONFIDENCE: LOW
   INJECTION_INDICATOR: MEDIUM
+  TEXT_FONT_OUTLIER: MEDIUM
+  EXTRACTION_CONFLICT: LOW
   REQUIRED_REGION_MISSING: MEDIUM
   PDF_SIGNATURE_INVALID: HIGH
   PDF_MODIFIED_AFTER_SIGNING: HIGH
@@ -128,6 +130,7 @@ thresholds:
   name_match: 0.85
   htr_min_conf: 0.70
   noise_suspicion: 0.65
+  ela_suspicion: 1.5
   duplicate_hash_hamming: 6
   duplicate_embed_cos: 0.97
   min_text_chars: 40

@@ -12,7 +12,7 @@ taxonomy:
     retention_days: 2555
     keywords: ["society registration", "registrar of societies"]
     fields:
-      society_name: {anchor: "Name of Society", type: entity_name, required: true}
+      society_name: {entity: society, anchor: "Name of Society", type: entity_name, required: true}
       reg_no: {anchor: "Registration No", type: string, required: true, pattern: "^SR/[A-Z]{2}/\\d{4}/\\d{4,6}$"}
       issued_on: {anchor: "Date of Registration", type: date, required: true}
       issuer: {anchor: "Issued by", type: string}
@@ -23,7 +23,7 @@ taxonomy:
     retention_days: 2555
     keywords: ["lease deed", "lessee"]
     fields:
-      lessee: {anchor: "Lessee", type: entity_name, required: true}
+      lessee: {entity: society, anchor: "Lessee", type: entity_name, required: true}
       lessor: {anchor: "Lessor", type: string}
       ref_no: {anchor: "Deed No", type: string, required: true, pattern: "^LD/[A-Z]{2}/\\d{4}/\\d{4,6}$"}
       issued_on: {anchor: "Executed on", type: date, required: true}
@@ -36,7 +36,7 @@ taxonomy:
     retention_days: 2555
     keywords: ["fire safety", "no objection certificate", "fire service"]
     fields:
-      addressee: {anchor: "Issued to", type: entity_name, required: true}
+      addressee: {entity: society, anchor: "Issued to", type: entity_name, required: true}
       ref_no: {anchor: "NOC No", type: string, required: true, pattern: "^FS/[A-Z]{2}/\\d{4}/\\d{5}$"}
       issued_on: {anchor: "Date of issue", type: date, required: true}
       valid_to: {anchor: "Valid until", type: date, required: true}
@@ -49,7 +49,7 @@ taxonomy:
     retention_days: 2555
     keywords: ["completion certificate", "building plan"]
     fields:
-      owner: {anchor: "Owner", type: entity_name, required: true}
+      owner: {entity: society, anchor: "Owner", type: entity_name, required: true}
       ref_no: {anchor: "Certificate No", type: string, required: true, pattern: "^BC/[A-Z]{2}/\\d{4}/\\d{4,6}$"}
       issued_on: {anchor: "Date of issue", type: date, required: true}
       built_up_sqm: {anchor: "Built-up area (sq m)", type: number}
@@ -60,7 +60,7 @@ taxonomy:
     keywords: ["affidavit", "deponent", "solemnly affirm", "शपथ पत्र", "शपथकर्ता"]
     fields:
       deponent: {anchor: "Deponent", alt_anchors: ["शपथकर्ता"], type: string, required: true}
-      society_name: {anchor: "On behalf of", alt_anchors: ["संस्था का नाम"], type: entity_name, required: true}
+      society_name: {entity: society, anchor: "On behalf of", alt_anchors: ["संस्था का नाम"], type: entity_name, required: true}
       issued_on: {anchor: "Sworn on", alt_anchors: ["दिनांक"], type: date, required: true}
     verification: []
   ACCREDITATION:
@@ -69,7 +69,7 @@ taxonomy:
     retention_days: 2555
     keywords: ["accreditation", "accredited"]
     fields:
-      institution: {anchor: "Institution", type: entity_name, required: true}
+      institution: {entity: institution, anchor: "Institution", type: entity_name, required: true}
       programme: {anchor: "Programme", type: string, required: true}
       ref_no: {anchor: "Certificate No", type: string, required: true, pattern: "^AC/\\d{4}/\\d{5}$"}
       issued_on: {anchor: "Date of issue", type: date, required: true}
@@ -80,7 +80,7 @@ taxonomy:
     label: "Processing Fee Receipt"
     keywords: ["fee receipt", "amount received"]
     fields:
-      payer: {anchor: "Received from", type: entity_name, required: true}
+      payer: {entity: society, anchor: "Received from", type: entity_name, required: true}
       ref_no: {anchor: "Receipt No", type: string, required: true, pattern: "^TR/\\d{4}/\\d{6}$"}
       amount: {anchor: "Amount (INR)", type: number, required: true}
       paid_on: {anchor: "Paid on", type: date, required: true}
@@ -90,7 +90,7 @@ taxonomy:
     label: "Faculty List"
     keywords: ["faculty list", "faculty members"]
     fields:
-      institution: {anchor: "Institution", type: entity_name, required: true}
+      institution: {entity: institution, anchor: "Institution", type: entity_name, required: true}
       as_on: {anchor: "As on", type: date, required: true}
     tables: {faculty: {min_columns: 4}}
     verification: []
@@ -216,6 +216,8 @@ severity:
   EXIF_LOCATION_MISMATCH: MEDIUM
   EXIF_MISSING: LOW
   INJECTION_INDICATOR: MEDIUM
+  TEXT_FONT_OUTLIER: MEDIUM
+  EXTRACTION_CONFLICT: LOW
   REQUIRED_REGION_MISSING: MEDIUM
   FEE_TOTAL_MISMATCH: MEDIUM
   FACULTY_COUNT_MISMATCH: HIGH
@@ -240,6 +242,7 @@ thresholds:
   name_match: 0.88
   htr_min_conf: 0.70
   noise_suspicion: 0.65
+  ela_suspicion: 1.5
   duplicate_hash_hamming: 6
   duplicate_embed_cos: 0.97
   min_text_chars: 40

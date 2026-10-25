@@ -5,6 +5,7 @@
   test     unit/integration tests                   e2e     Playwright acceptance tests (needs `up`)
   eval     evaluation report -> docs/EVAL.md        probe   GPU/model probe -> docs/VERSIONS.md
   eval-real  score real files in realdata/ against realdata/truth.csv (offline)
+  worker   local AI worker: runs agents on this GPU for the hosted site (needs .env.worker with MONGODB_URI)
   fetch-public / eval-public  public dataset subsets (MIT Indoor 67, CubiCasa5K, IIIT-HW-Dev) and their scores
   down     stop servers started by `up`             cron    run nightly jobs once
 Use MODE=FULL (env or .env) for GPU models; default is LITE."""
@@ -133,6 +134,17 @@ def eval_public():
     sys.exit(sh([PY, "-m", "pramaan.evaluate_public"]))
 
 
+def worker():
+    """Local AI worker for the hosted site: reads .env.worker (MONGODB_URI of the live database), runs agents on this GPU."""
+    p = os.path.join(ROOT, ".env.worker")
+    if os.path.exists(p):
+        for line in open(p, encoding="utf-8"):
+            if "=" in line and not line.lstrip().startswith("#"):
+                k, v = line.strip().split("=", 1)
+                os.environ[k] = v.strip('"')
+    sys.exit(sh([PY, "-m", "pramaan.worker"] + sys.argv[2:]))
+
+
 def probe():
     sys.exit(sh([PY, "scripts/gpu_probe.py", "--load"]))
 
@@ -143,7 +155,7 @@ def cron():
     print(http("GET", "http://127.0.0.1:8010/api/cron/daily", tok))
 
 
-TARGETS = {"secrets": secrets_, "up": up, "down": down, "seed": seed, "demo": demo, "test": test, "e2e": e2e, "eval": eval_, "eval-real": eval_real, "fetch-public": fetch_public, "eval-public": eval_public,
+TARGETS = {"secrets": secrets_, "up": up, "down": down, "seed": seed, "demo": demo, "test": test, "e2e": e2e, "eval": eval_, "eval-real": eval_real, "fetch-public": fetch_public, "worker": worker, "eval-public": eval_public,
            "probe": probe, "cron": cron}
 
 if __name__ == "__main__":

@@ -34,7 +34,12 @@ set MODE=FULL                              # PowerShell: $env:MODE="FULL"   bash
 ```
 
 FULL adds the OCR Model and Handwriting Model for scanned pages, the Object Detector and Scene Classifier for photos, image embeddings for
-duplicate search, and the Reasoning LLM for the case summary. Agents run automatically in FULL mode (`AGENTS=on|off|auto`).
+duplicate search, and the agents. Agents need Ollama with `ollama pull qwen2.5:7b-instruct`. They run in FULL mode
+(`AGENT_MODE=on|off`) and fall back to the fixed pipeline if Ollama is not running.
+
+To give the hosted site a local AI backend, put `MONGODB_URI` (the site's database) in `.env.worker` and run
+`python tasks.py worker`. The console then shows "Local AI: online", and an officer can press "Re-check with local AI"
+on any application. The agent timeline appears under the Timeline tab.
 
 ## Other targets
 
@@ -44,6 +49,8 @@ duplicate search, and the Reasoning LLM for the case summary. Agents run automat
 | `python tasks.py e2e` | Playwright tests for the 8 acceptance criteria (starts its own LITE servers) |
 | `python tasks.py eval` | full evaluation, writes docs/EVAL.md (use MODE=FULL for model metrics) |
 | `python tasks.py seed` | reload demo data |
+| `python tasks.py worker` | local AI worker for the hosted site (FULL mode plus agents) |
+| `python scripts/verify_agents.py` | Phase 7 checks against the real local LLM, writes docs/AGENTS-VERIFY.json |
 | `python tasks.py cron` | nightly jobs once: SLA alerts, retention purge, audit anchor |
 | `python tasks.py down` | stop servers started by `up` or `demo` |
 

@@ -46,6 +46,14 @@ export default function Detail() {
   const [obs, setObs] = useState("");
   const [msg, setMsg] = useState("");
   const load = () => api(`/applications/${id}`).then(setD);
+  const [health, setHealth] = useState<any>({});
+  useEffect(() => { api("/health").then(setHealth).catch(() => {}); }, []);
+  const req = d?.application?.agent_request;
+  useEffect(() => {
+    if (!req || !["pending", "running"].includes(req.status)) return;
+    const t = setInterval(load, 5000);
+    return () => clearInterval(t);
+  }, [req?.status]);
   useEffect(() => { load(); }, [id]);
 
   const flags = useMemo(() => (d?.flags || []).slice().sort((a: any, b: any) => ORDER.indexOf(a.severity) - ORDER.indexOf(b.severity)), [d]);
@@ -103,6 +111,13 @@ export default function Detail() {
           <div className="text-sm text-slate-500">{CATEGORY[a.category] || a.category} · sent through {d.host}</div>
         </div>
         <div className="flex-1" />
+        {health.local_ai?.online && can("dispose_flags") && (
+          <button className="btn2 border-violet-300 text-violet-700 dark:text-violet-300" disabled={req && ["pending", "running"].includes(req.status)}
+            onClick={async () => { await api(`/applications/${id}/run-local`, { method: "POST" }); load(); }}>
+            {req?.status === "pending" ? "Waiting for local AI…" : req?.status === "running" ? "Local AI checking…" : "Re-check with local AI"}
+          </button>
+        )}
+        {req?.status === "done" && <span className="text-xs text-violet-700 dark:text-violet-300">Local AI re-check done (report v{req.report_version}{req.agents ? ", agents" : ", fallback to DAG"})</span>}
         <a className="btn2" href={`/api/applications/${id}/report.pdf`} target="_blank">Download report</a>
         <a className="btn2" href={`/api/applications/${id}/report.html?view=institution`} target="_blank">What the college sees</a>
       </div>
@@ -364,17 +379,7 @@ export default function Detail() {
               {d.institution_view.pending_authority_verification > 0 && <div>• Some documents need verification by the authority.</div>}
             </div>
           )}
-          {more === "timeline" && (
-            <div className="text-xs space-y-1">
-              <div className="mb-2 text-sm">Report versions: {d.reports.map((r: any) => `v${r.version}${r.changed ? " (after re-upload)" : ""}`).join(" → ")}. Checked in {(rep.elapsed_ms / 1000).toFixed(1)} s, {rep.mode} mode{rep.agents ? ", with agents" : ""}.</div>
-              {(d.traces || []).length > 0 && <div className="mb-2 rounded bg-slate-50 dark:bg-slate-800 p-2"><div className="font-semibold mb-1">Why it was checked this way</div>
-                {d.traces.map((t: any, i: number) => <div key={i}><b>{t.agent}</b>: {t.note || t.tool}</div>)}</div>}
-              {(rep.timeline || []).map((t: any, i: number) => (
-                <div key={i} className="flex gap-2"><span className={`w-16 shrink-0 ${t.status === "reused" ? "text-slate-400" : t.status === "error" ? "text-red-600" : "text-emerald-700"}`}>{t.status === "reused" ? "not rerun" : t.status}</span>
-                  <span className="flex-1">{t.stage.replace("doc:", "document: ")}{t.note && <span className="text-slate-400"> – {t.note}</span>}</span><span>{t.ms ?? ""} ms</span></div>
-              ))}
-            </div>
-          )}
+          {more === "timeline" && <Timeline id={id!} reports={d.reports} />}
           {more === "notes" && (
             <div className="text-sm">
               {(a.observations || []).length === 0 && <div className="text-slate-500">No notes yet.</div>}
@@ -408,6 +413,27 @@ export default function Detail() {
           {msg && <div className="text-xs w-full">{msg}</div>}
         </div>
       </div>
+    </div>
+  );
+}
+
+function Timeline({ id, reports }: { id: string; reports: any[] }) {
+  const [t, setT] = useState<any>(null);
+  useEffect(() => { api(`/applications/${id}/timeline`).then(setT); }, [id, reports.length]);
+  if (!t) return <div className="text-xs text-slate-500">Loading timeline…</div>;
+  const u = t.usage;
+  return (
+    <div data-testid="agent-timeline" className="text-sm space-y-1">
+      <div className="mb-2">
+        Report versions: {reports.map((r: any) => `v${r.version}${r.changed ? " (after re-upload)" : ""}`).join(" → ")}. Checked in {((t.elapsed_ms || 0) / 1000).toFixed(1)} s,{" "}
+        {t.agents ? "with agents" : "fixed pipeline (no agents)"}{u && `: ${u.llm_calls} model calls, ${u.tokens_in + u.tokens_out} tokens, ${u.model}`}.
+      </div>
+      {t.lines.map((l: any, i: number) => (
+        <div key={i} className={`flex gap-2 ${l.kind === "fallback" ? "text-amber-700 dark:text-amber-400" : l.kind === "error" ? "text-red-600" : ""}`}>
+          <span className="w-4 shrink-0">{l.kind === "agent" ? "•" : l.kind === "fallback" ? "↺" : l.kind === "error" ? "!" : "·"}</span>
+          <span className={l.kind === "doc" ? "text-slate-500" : ""}>{l.text}</span>
+        </div>
+      ))}
     </div>
   );
 }

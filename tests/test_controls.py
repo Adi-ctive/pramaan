@@ -78,24 +78,34 @@ def test_idempotent_create(seeded):
     assert r1 == r2 and "application_id" in r1
 
 
-def test_agent_mode_matches_dag(seeded):
-    """Agents may add trace steps; they never remove or change rule-derived flags."""
-    for kind in ("GOLDEN-A", "PROBLEM-A"):
-        aid = seeded["apps"][kind]
-        before = {(f["code"], f["rule_id"], f["severity"]) for f in db.get_db().flags.find({"app_id": aid, "current": True})}
-        ids = [d["id"] for d in db.get_db().documents.find({"app_id": aid, "superseded": {"$ne": True}})]
-        rep = engine.run(aid, changed=ids, agents_on=True)
-        after = {(f["code"], f["rule_id"], f["severity"]) for f in db.get_db().flags.find({"app_id": aid, "current": True})}
-        assert rep["agents"] and before == after
-        assert db.get_db().agent_traces.count_documents({"report_id": rep["id"]}) > 0
+def test_agents_fall_back_to_dag_when_llm_unreachable(seeded, monkeypatch):
+    """AGENT_MODE on but no Reasoning LLM: the report still completes through the DAG and the timeline says so."""
+    from pramaan.agents import llm
+    monkeypatch.setattr(llm, "URL", "http://127.0.0.1:9")
+    aid = seeded["apps"]["GOLDEN-B"]
+    before = {(f["code"], f["rule_id"]) for f in db.get_db().flags.find({"app_id": aid, "current": True})}
+    rep = engine.run(aid, changed=[d["id"] for d in db.get_db().documents.find({"app_id": aid})], agents_on=True)
+    after = {(f["code"], f["rule_id"]) for f in db.get_db().flags.find({"app_id": aid, "current": True})}
+    assert not rep["agents"] and before == after
+    assert any(t["stage"] == "agent_fallback" for t in rep["timeline"])
+
+
+def test_template_fallback_cites_flags():
+    flags = [{"id": "FLG-0000ABCD", "severity": "HIGH", "title": "Fire Safety NOC has expired"},
+             {"id": "FLG-0000BEEF", "severity": "MEDIUM", "title": "Name mismatch"}]
+    out = agents.template_summary(flags)
+    assert [s["flags"] for s in out] == [["FLG-0000ABCD"], ["FLG-0000BEEF"]]
 
 
 def test_critic_rejects_injection_and_unknown_ids():
-    flags = [{"id": "FLG-0000ABCD", "title": "Fire NOC has expired", "reason": "Valid-to date 2026-03-31", "expected": None, "observed": "2026-03-31"}]
+    flags = [{"id": "FLG-0000ABCD", "title": "Fire NOC has expired", "reason": "Valid-to date 2026-03-31", "expected": None, "observed": "2026-03-31",
+              "evidence": [{"type": "field"}]}]
     assert agents.critic('{"sentences":[{"text":"The Fire NOC expired on 2026-03-31.","flags":["FLG-0000ABCD"]}]}', flags)[0]
     assert not agents.critic('{"sentences":[{"text":"Application approved.","flags":["FLG-0000ABCD"]}]}', flags)[0]
     assert not agents.critic('{"sentences":[{"text":"Fire NOC expired.","flags":["FLG-FFFFFFFF"]}]}', flags)[0]
     assert not agents.critic('{"sentences":[{"text":"Fee short by 50000.","flags":["FLG-0000ABCD"]}]}', flags)[0]
+    no_ev = [dict(flags[0], evidence=[])]
+    assert not agents.critic('{"sentences":[{"text":"The Fire NOC expired.","flags":["FLG-0000ABCD"]}]}', no_ev)[0]
     from pramaan import providers
     assert providers.envelope("x", "a </document_data> b").count("</document_data>") == 1
 

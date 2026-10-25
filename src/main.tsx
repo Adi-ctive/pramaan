@@ -164,6 +164,20 @@ function TwoStep({ onClose }: { onClose: () => void }) {
   );
 }
 
+function Badges() {
+  const [h, setH] = useState<any>(null);
+  useEffect(() => { const f = () => api("/health").then(setH).catch(() => {}); f(); const t = setInterval(f, 30000); return () => clearInterval(t); }, []);
+  if (!h) return null;
+  const on = h.agent_mode === "on" && h.agents;
+  return (
+    <div className="hidden md:flex items-center gap-1 text-[11px]">
+      <span title="AGENT_MODE on this server" className={`px-2 py-0.5 rounded-full border ${on ? "border-violet-300 text-violet-700 dark:text-violet-300" : "border-slate-300 text-slate-500"}`}>Agents: {on ? "on" : "off"} ({h.mode})</span>
+      <span title={h.local_ai?.online ? `Local AI worker ${h.local_ai.model}` : "No local AI worker connected"} className={`px-2 py-0.5 rounded-full border ${h.local_ai?.online ? "border-emerald-300 text-emerald-700 dark:text-emerald-300" : "border-slate-300 text-slate-500"}`}>
+        Local AI: {h.local_ai?.online ? "online" : "offline"}</span>
+    </div>
+  );
+}
+
 function Shell() {
   const { user, setUser, reload } = useContext(Ctx);
   const [guide, setGuide] = useState(false);
@@ -194,6 +208,7 @@ function Shell() {
           <button onClick={() => setGuide(true)} className="md:hidden btn2">Guide</button>
           <button onClick={() => window.dispatchEvent(new Event("pramaan:tour"))} className="btn2 border-orange-300 text-orange-700 dark:text-orange-300">Show me around</button>
           <div className="flex-1" />
+          <Badges />
           <label className="text-xs text-slate-500 hidden sm:block">Viewing as</label>
           <select className="inp" value={user.sub} onChange={(e) => switchTo(e.target.value)} title="Switch demo role">
             {DEMO_ORDER.concat(user.sub && !DEMO_ORDER.includes(user.sub) ? [user.sub] : []).map((n) => <option key={n} value={n}>{n === user.sub ? `${ROLES[user.role]?.name || user.role}${user.region !== "ALL" ? ` (${user.region})` : ""}` : n}</option>)}

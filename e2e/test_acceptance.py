@@ -228,3 +228,16 @@ def test_9_audit_chain(page):
     urllib.request.urlopen(urllib.request.Request(API + "/api/admin/tamper-demo", method="POST", headers={"X-Seed-Token": SEED_TOKEN}))
     page.get_by_role("button", name="Verify chain").click()
     expect(page.get_by_text("Chain BROKEN at sequence #3", exact=False)).to_be_visible()
+
+
+# Phase 7: the Timeline tab renders processing steps; with E2E_EXPECT_AGENTS=1 (after a local AI re-check) it must show agent steps
+def test_10_timeline_tab(page):
+    officer(page, "Enter as Senior Officer")
+    open_app(page, "PROBLEM-A")
+    page.get_by_role("button", name="How it was processed").click()
+    tl = page.get_by_test_id("agent-timeline")
+    expect(tl).to_be_visible()
+    expect(tl.get_by_text("checked in", exact=False).first).to_be_visible()
+    if os.environ.get("E2E_EXPECT_AGENTS") == "1":
+        for who in ("Orchestrator:", "Forensics Agent:", "Verification Agent:", "Critic:"):
+            expect(tl.get_by_text(who, exact=False).first).to_be_visible()
